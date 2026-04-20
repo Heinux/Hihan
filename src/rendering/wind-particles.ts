@@ -76,6 +76,7 @@ export class WindParticleSystem {
   private _lastPanX = NaN;
   private _lastPanY = NaN;
   private _lastZoomK = NaN;
+  private _lastViewScale = NaN;
   private _purgeCounter = 0;
 
   readonly particleCount: number;
@@ -144,10 +145,11 @@ export class WindParticleSystem {
     const Hv = H / vs;
     const clampedDt = Math.min(dt, 0.05);
 
-    // Detect viewport change (pan or zoom) — clear offscreen canvas to prevent ghost trails
+    // Detect viewport change (pan, zoom, or viewScale) — clear offscreen canvas to prevent ghost trails
     const panChanged = !isNaN(this._lastPanX) && (Math.round(panX) !== this._lastPanX || Math.round(panY) !== this._lastPanY);
     const zoomChanged = !isNaN(this._lastZoomK) && zoomK !== this._lastZoomK;
-    if (panChanged || zoomChanged) {
+    const vsChanged = !isNaN(this._lastViewScale) && viewScale !== this._lastViewScale;
+    if (panChanged || zoomChanged || vsChanged) {
       // Clear old trails (they're in screen space, now at wrong positions)
       if (this.offCtx) this.offCtx.clearRect(0, 0, this._cssW, this._cssH);
       // Reset all particles so they re-project to new viewport
@@ -156,6 +158,7 @@ export class WindParticleSystem {
     this._lastPanX = Math.round(panX);
     this._lastPanY = Math.round(panY);
     this._lastZoomK = zoomK;
+    this._lastViewScale = viewScale;
 
     this._grid = gridA;
     const speedFactor = this.speedFactor;

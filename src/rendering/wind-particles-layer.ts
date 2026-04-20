@@ -13,6 +13,7 @@ export const windParticlesLayer: RenderLayer = {
   render(ctx: CanvasRenderingContext2D, state: AppState, deps: RenderDeps): void {
     if (!deps.windSystem) return;
     const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     deps.windSystem.ensureCanvas(state.W, state.H, dpr);
 
     let windDt = deps.frame.dt || DT_FALLBACK;
