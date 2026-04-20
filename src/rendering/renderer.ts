@@ -1,5 +1,6 @@
 import { geoGraticule, geoCircle } from 'd3-geo';
-import type { GeoProjection, GeoPath } from 'd3';
+import type { GeoProjection } from 'd3';
+import type { TypedGeoPath } from '@/rendering/geo-path';
 import { normLon, eclToEquatorial } from '@/core/astronomy';
 import { SEASON_DEFS, EVENT_LABELS_N, EVENT_LABELS_S, zoomLabelScale } from '@/core/constants';
 
@@ -85,11 +86,11 @@ export class CanvasRenderer {
   readonly #canvas: HTMLCanvasElement;
   readonly #ctx: CanvasRenderingContext2D;
   readonly #projection: GeoProjection;
-  readonly #pathGen: GeoPath;
+  readonly #pathGen: TypedGeoPath;
   #bgGradient: CanvasGradient | null = null;
   #bgW = 0;
   #bgH = 0;
-  readonly #cachedGraticule: GeoJSON.GeoJsonObject;
+  readonly #cachedGraticule: GeoJSON.MultiLineString;
 
   // Offscreen canvas cache for background layer (world map + graticule + sphere fill)
   #bgCanvas: HTMLCanvasElement | null = null;
@@ -97,12 +98,12 @@ export class CanvasRenderer {
   #bgCacheKey = '';
   #bgCacheDpr = 1;
 
-  constructor(canvas: HTMLCanvasElement, projection: GeoProjection, pathGen: GeoPath) {
+  constructor(canvas: HTMLCanvasElement, projection: GeoProjection, pathGen: TypedGeoPath) {
     this.#canvas = canvas;
     this.#ctx = canvas.getContext('2d')!;
     this.#projection = projection;
     this.#pathGen = pathGen;
-    this.#cachedGraticule = geoGraticule()() as GeoJSON.GeoJsonObject;
+    this.#cachedGraticule = geoGraticule()();
   }
 
   get ctx(): CanvasRenderingContext2D { return this.#ctx; }
@@ -167,13 +168,13 @@ export class CanvasRenderer {
       this.#bgH = Hv;
     }
     off.beginPath();
-    this.#pathGen.context(off)({ type: "Sphere" } as any);
+    this.#pathGen.context(off)({ type: "Sphere" });
     off.fillStyle = this.#bgGradient;
     off.fill();
 
     // Graticule
     off.beginPath();
-    this.#pathGen.context(off)(this.#cachedGraticule as any);
+    this.#pathGen.context(off)(this.#cachedGraticule);
     off.strokeStyle = 'rgba(100,130,170,0.04)';
     off.lineWidth = 0.8;
     off.stroke();
@@ -181,7 +182,7 @@ export class CanvasRenderer {
     // World map
     if (worldData) {
       off.beginPath();
-      this.#pathGen.context(off)(worldData as any);
+      this.#pathGen.context(off)(worldData);
       off.fillStyle = '#131e2a';
       off.fill();
       off.strokeStyle = 'rgba(60,85,115,0.38)';
@@ -205,14 +206,14 @@ export class CanvasRenderer {
       this.#bgH = H;
     }
     this.#ctx.beginPath();
-    this.#pathGen({ type: "Sphere" } as any);
+    this.#pathGen({ type: "Sphere" });
     this.#ctx.fillStyle = this.#bgGradient;
     this.#ctx.fill();
   }
 
   drawGraticule(): void {
     this.#ctx.beginPath();
-    this.#pathGen(this.#cachedGraticule as any);
+    this.#pathGen(this.#cachedGraticule);
     this.#ctx.strokeStyle = 'rgba(100,130,170,0.04)';
     this.#ctx.lineWidth = 0.8;
     this.#ctx.stroke();
@@ -221,7 +222,7 @@ export class CanvasRenderer {
   drawWorld(worldData: GeoJSON.GeoJsonObject | null): void {
     if (!worldData) return;
     this.#ctx.beginPath();
-    this.#pathGen(worldData as any);
+    this.#pathGen(worldData);
     this.#ctx.fillStyle = '#131e2a';
     this.#ctx.fill();
     this.#ctx.strokeStyle = 'rgba(60,85,115,0.38)';
@@ -236,7 +237,7 @@ export class CanvasRenderer {
       eclPts.push([normLon((ra - gmst) * 15), dec]);
     }
     this.#ctx.beginPath();
-    this.#pathGen({ type: "LineString", coordinates: eclPts } as any);
+    this.#pathGen({ type: "LineString", coordinates: eclPts });
     this.#ctx.strokeStyle = 'rgba(200,215,235,0.2)';
     this.#ctx.lineWidth = 1.2;
     this.#ctx.setLineDash([4, 4]);
@@ -249,14 +250,14 @@ export class CanvasRenderer {
     if (antipodeLon > 180) antipodeLon -= 360;
     const nc = geoCircle().center([antipodeLon, -sunLat]).radius(90)();
     this.#ctx.beginPath();
-    this.#pathGen(nc as any);
+    this.#pathGen(nc);
     this.#ctx.fillStyle = 'rgba(1,3,8,0.52)';
     this.#ctx.fill();
   }
 
   drawSphereOutline(): void {
     this.#ctx.beginPath();
-    this.#pathGen({ type: "Sphere" } as any);
+    this.#pathGen({ type: "Sphere" });
     this.#ctx.strokeStyle = 'rgba(100,130,165,0.18)';
     this.#ctx.lineWidth = 1.5;
     this.#ctx.stroke();
@@ -268,7 +269,7 @@ export class CanvasRenderer {
       eqPts.push([normLon((ra - gmst) * 15), 0]);
     }
     this.#ctx.beginPath();
-    this.#pathGen({ type: 'LineString', coordinates: eqPts } as any);
+    this.#pathGen({ type: 'LineString', coordinates: eqPts });
     this.#ctx.strokeStyle = 'rgba(140,170,210,0.18)';
     this.#ctx.lineWidth = 1;
     this.#ctx.setLineDash([6, 6]);

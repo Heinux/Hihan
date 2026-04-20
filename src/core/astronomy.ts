@@ -140,7 +140,7 @@ function _precessRaw(ra_deg: number, dec_deg: number, { zeta, z, theta }: Preces
   const B: number = Math.cos(theta) * Math.cos(dec0) * Math.cos(ra0 + zeta) - Math.sin(theta) * Math.sin(dec0);
   const C: number = Math.sin(theta) * Math.cos(dec0) * Math.cos(ra0 + zeta) + Math.cos(theta) * Math.sin(dec0);
 
-  let raRad: number = Math.atan2(A, B) + z;
+  const raRad: number = Math.atan2(A, B) + z;
   const decRad: number = Math.asin(Math.max(-1, Math.min(1, C)));
 
   let raDeg: number = (raRad * 180 / Math.PI) % 360;

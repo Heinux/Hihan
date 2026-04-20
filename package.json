@@ -31,7 +31,8 @@
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
@@ -41,7 +42,10 @@
     "@types/node": "^25.6.0",
     "@types/pako": "^2.0.4",
     "@types/topojson-client": "^3.1.5",
+    "@vitest/coverage-v8": "^4.1.4",
     "eslint": "^9.39.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.58.2",
     "vite": "^6.3.2",
@@ -56,5 +60,11 @@
     "satori-html": "^0.3.2",
     "svg2png-wasm": "^1.4.1",
     "topojson-client": "^3.1.0"
+  },
+  "lint-staged": {
+    "src/**/*.ts": [
+      "eslint --fix",
+      "vitest related --run"
+    ]
   }
 }

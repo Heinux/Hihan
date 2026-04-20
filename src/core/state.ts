@@ -173,7 +173,7 @@ export class AppState extends EventEmitter {
     this.updateObserverCoords();
   }
 
-  // ── Viewport getters/setters (backward compat) ───────────────────
+  // ── Viewport getters/setters (deprecated — prefer state.viewport.*) ─
 
   get W(): number { return this.viewport.W; }
   set W(v: number) { this.viewport.W = v; }
@@ -193,7 +193,7 @@ export class AppState extends EventEmitter {
   get viewScale(): number { return this.viewport.viewScale; }
   set viewScale(v: number) { this.viewport.viewScale = v; }
 
-  // ── Time getters/setters (backward compat) ────────────────────────
+  // ── Time getters/setters (deprecated — prefer state.time.*) ──────
 
   get isPaused(): boolean { return this.time.isPaused; }
   set isPaused(v: boolean) { this.time.isPaused = v; this.emit('time:changed', { jd: this.getAstroJD() }); }
@@ -237,7 +237,7 @@ export class AppState extends EventEmitter {
     this.time.observerLongitudeApprox = approx;
   }
 
-  // ── Celestial getters/setters (backward compat) ───────────────────
+  // ── Celestial getters/setters (deprecated — prefer state.celestial.*) ─
 
   get smoothPositions(): SmoothPositions { return this.celestial.smoothPositions; }
   set smoothPositions(v: SmoothPositions) { this.celestial.smoothPositions = v; }
@@ -263,7 +263,7 @@ export class AppState extends EventEmitter {
   get currentSunEclLon(): number { return this.celestial.currentSunEclLon; }
   set currentSunEclLon(v: number) { this.celestial.currentSunEclLon = v; }
 
-  // ── Enoch getters/setters (backward compat) ───────────────────────
+  // ── Enoch getters/setters (deprecated — prefer state.enoch.*) ─────
 
   get enochHem(): 'N' | 'S' { return this.enoch.enochHem; }
   set enochHem(v: 'N' | 'S') { this.enoch.enochHem = v; this.emit('hemisphere:changed', { hem: v }); }

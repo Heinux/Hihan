@@ -18,7 +18,7 @@ let lastSeasonBarUpdate = 0;
 let lastCountdownUpdate = 0;
 
 // Pre-built card DOM nodes reused across rebuilds to avoid innerHTML thrashing
-let _cardEls: HTMLElement[] = [];
+const _cardEls: HTMLElement[] = [];
 let _onJump: ((jd: number) => void) | null = null;
 let _cardJDs: number[] = [];
 

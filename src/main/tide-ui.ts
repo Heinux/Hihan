@@ -5,99 +5,113 @@ import { computeTideState, computeTideCurve, formatTideHeight } from '@/core/tid
 import type { TideResult, TideCurvePoint } from '@/core/tide';
 import { drawTideCurve } from '@/rendering/tide-curve';
 
-let _tidePanelOpen = false;
-let _cachedTideState: TideResult | null = null;
-let _cachedTideCurve: TideCurvePoint[] = [];
-let _tideBtn: HTMLButtonElement | null;
-let _tidePanel: HTMLElement | null;
-let _tideCurveCanvas: HTMLCanvasElement | null;
-let _tideCurveCtx: CanvasRenderingContext2D | null;
+export class TideUIManager {
+  #panelOpen = false;
+  #cachedTideState: TideResult | null = null;
+  #cachedTideCurve: TideCurvePoint[] = [];
+  #tideBtn: HTMLButtonElement | null = null;
+  #tidePanel: HTMLElement | null = null;
+  #tideCurveCanvas: HTMLCanvasElement | null = null;
+  #tideCurveCtx: CanvasRenderingContext2D | null = null;
 
-export function isTidePanelOpen(): boolean { return _tidePanelOpen; }
+  isPanelOpen(): boolean { return this.#panelOpen; }
 
-export function getCachedTideState(): TideResult | null { return _cachedTideState; }
+  getCachedState(): TideResult | null { return this.#cachedTideState; }
 
-export function openTidePanel(): void {
-  if (!_tidePanel) return;
-  _tidePanel.classList.add('visible');
-  _tidePanelOpen = true;
-  if (_tideBtn) _tideBtn.classList.add('active');
-  requestAnimationFrame(() => drawTideCurveIfOpen());
-}
+  openPanel(): void {
+    if (!this.#tidePanel) return;
+    this.#tidePanel.classList.add('visible');
+    this.#panelOpen = true;
+    if (this.#tideBtn) this.#tideBtn.classList.add('active');
+    requestAnimationFrame(() => this.#drawCurveIfOpen());
+  }
 
-export function closeTidePanel(): void {
-  if (!_tidePanel) return;
-  _tidePanel.classList.remove('visible');
-  _tidePanelOpen = false;
-  if (_tideBtn) _tideBtn.classList.remove('active');
-}
+  closePanel(): void {
+    if (!this.#tidePanel) return;
+    this.#tidePanel.classList.remove('visible');
+    this.#panelOpen = false;
+    if (this.#tideBtn) this.#tideBtn.classList.remove('active');
+  }
 
-function drawTideCurveIfOpen(): void {
-  if (!_tideCurveCanvas || !_tideCurveCtx || !_cachedTideState) return;
-  const dpr = window.devicePixelRatio || 1;
-  const rect = _tideCurveCanvas.getBoundingClientRect();
-  const cw = Math.round(rect.width);
-  if (cw <= 0) return;
-  _tideCurveCanvas.width = cw * dpr;
-  _tideCurveCanvas.height = 220 * dpr;
-  _tideCurveCanvas.style.height = '220px';
-  drawTideCurve({
-    ctx: _tideCurveCtx,
-    W: cw,
-    H: 220,
-    dpr,
-    curve: _cachedTideCurve,
-    isRising: _cachedTideState.isRising,
-    springNeapLabel: _cachedTideState.springNeapLabel,
-    lastExtremumTimeStr: _cachedTideState.lastExtremumTimeStr,
-    lastExtremumLabel: _cachedTideState.lastExtremumLabel,
-    nextExtremumTimeStr: _cachedTideState.nextExtremumTimeStr,
-    nextExtremumLabel: _cachedTideState.nextExtremumLabel,
-  });
-}
+  #drawCurveIfOpen(): void {
+    if (!this.#tideCurveCanvas || !this.#tideCurveCtx || !this.#cachedTideState) return;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = this.#tideCurveCanvas.getBoundingClientRect();
+    const cw = Math.round(rect.width);
+    if (cw <= 0) return;
+    this.#tideCurveCanvas.width = cw * dpr;
+    this.#tideCurveCanvas.height = 220 * dpr;
+    this.#tideCurveCanvas.style.height = '220px';
+    drawTideCurve({
+      ctx: this.#tideCurveCtx,
+      W: cw,
+      H: 220,
+      dpr,
+      curve: this.#cachedTideCurve,
+      isRising: this.#cachedTideState.isRising,
+      springNeapLabel: this.#cachedTideState.springNeapLabel,
+      lastExtremumTimeStr: this.#cachedTideState.lastExtremumTimeStr,
+      lastExtremumLabel: this.#cachedTideState.lastExtremumLabel,
+      nextExtremumTimeStr: this.#cachedTideState.nextExtremumTimeStr,
+      nextExtremumLabel: this.#cachedTideState.nextExtremumLabel,
+    });
+  }
 
-export function drawTideCurveIfReady(): void {
-  if (_tidePanelOpen && _cachedTideState) {
-    drawTideCurveIfOpen();
+  drawCurveIfReady(): void {
+    if (this.#panelOpen && this.#cachedTideState) {
+      this.#drawCurveIfOpen();
+    }
+  }
+
+  updateCache(params: Parameters<typeof computeTideState>[0]): void {
+    this.#cachedTideState = computeTideState(params);
+    this.#cachedTideCurve = computeTideCurve(params);
+  }
+
+  clearCache(): void {
+    this.#cachedTideState = null;
+    this.#cachedTideCurve = [];
+  }
+
+  setupUI(state: AppState): void {
+    this.#tideBtn = document.getElementById('tideBtn') as HTMLButtonElement | null;
+    this.#tidePanel = document.getElementById('tidePanel') as HTMLElement | null;
+    this.#tideCurveCanvas = document.getElementById('tideCurveCanvas') as HTMLCanvasElement | null;
+    this.#tideCurveCtx = this.#tideCurveCanvas?.getContext('2d') ?? null;
+
+    if (this.#tideBtn) this.#tideBtn.addEventListener('click', () => {
+      const cb = document.getElementById('show-tideLayers') as HTMLInputElement | null;
+      if (!this.#panelOpen) {
+        if (cb && !cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
+        this.openPanel();
+      } else {
+        if (cb && cb.checked) { cb.checked = false; cb.dispatchEvent(new Event('change')); }
+        this.closePanel();
+      }
+      state.invalidateCheckboxCache();
+      state.needsRedraw = true;
+    });
+  }
+
+  formatTopBar(): string | null {
+    if (!this.#cachedTideState) return null;
+    const t = this.#cachedTideState;
+    const arrow = t.isRising ? '↑' : '↓';
+    const shortLabel = t.springNeapLabel.replace('Marée de ', '').replace('Marée ', '');
+    return `<span class="tide-height-label">≋</span> ${arrow}${formatTideHeight(t.heightMeters)} · <span class="tide-spring-neap-label">${shortLabel}</span> · <span class="tide-next-high-label">${t.lastExtremumLabel}</span> ${t.lastExtremumTimeStr} · <span class="tide-next-low-label">${t.nextExtremumLabel}</span> ${t.nextExtremumTimeStr}`;
   }
 }
 
-/** Update cached tide data from the main draw loop */
-export function updateTideCache(params: Parameters<typeof computeTideState>[0]): void {
-  _cachedTideState = computeTideState(params);
-  _cachedTideCurve = computeTideCurve(params);
-}
+// Singleton for production use
+export const tideUIManager = new TideUIManager();
 
-export function clearTideCache(): void {
-  _cachedTideState = null;
-  _cachedTideCurve = [];
-}
-
-export function setupTideUI(state: AppState): void {
-  _tideBtn = document.getElementById('tideBtn') as HTMLButtonElement | null;
-  _tidePanel = document.getElementById('tidePanel') as HTMLElement | null;
-  _tideCurveCanvas = document.getElementById('tideCurveCanvas') as HTMLCanvasElement | null;
-  _tideCurveCtx = _tideCurveCanvas?.getContext('2d') ?? null;
-
-  if (_tideBtn) _tideBtn.addEventListener('click', () => {
-    const cb = document.getElementById('show-tideLayers') as HTMLInputElement | null;
-    if (!_tidePanelOpen) {
-      if (cb && !cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
-      openTidePanel();
-    } else {
-      if (cb && cb.checked) { cb.checked = false; cb.dispatchEvent(new Event('change')); }
-      closeTidePanel();
-    }
-    state.invalidateCheckboxCache();
-    state.needsRedraw = true;
-  });
-}
-
-/** Format tide info for the top bar display */
-export function formatTideTopBar(): string | null {
-  if (!_cachedTideState) return null;
-  const t = _cachedTideState;
-  const arrow = t.isRising ? '↑' : '↓';
-  const shortLabel = t.springNeapLabel.replace('Marée de ', '').replace('Marée ', '');
-  return `<span class="tide-height-label">≋</span> ${arrow}${formatTideHeight(t.heightMeters)} · <span class="tide-spring-neap-label">${shortLabel}</span> · <span class="tide-next-high-label">${t.lastExtremumLabel}</span> ${t.lastExtremumTimeStr} · <span class="tide-next-low-label">${t.nextExtremumLabel}</span> ${t.nextExtremumTimeStr}`;
-}
+// Convenience re-exports that delegate to the singleton
+export const isTidePanelOpen = () => tideUIManager.isPanelOpen();
+export const getCachedTideState = () => tideUIManager.getCachedState();
+export const openTidePanel = () => tideUIManager.openPanel();
+export const closeTidePanel = () => tideUIManager.closePanel();
+export const drawTideCurveIfReady = () => tideUIManager.drawCurveIfReady();
+export const updateTideCache = (params: Parameters<typeof computeTideState>[0]) => tideUIManager.updateCache(params);
+export const clearTideCache = () => tideUIManager.clearCache();
+export const setupTideUI = (state: AppState) => tideUIManager.setupUI(state);
+export const formatTideTopBar = () => tideUIManager.formatTopBar();

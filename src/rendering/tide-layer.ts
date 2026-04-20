@@ -1,7 +1,7 @@
 import { geoCircle } from 'd3-geo';
 import type { AppState } from '@/core/state';
 import type { RenderLayer, RenderDeps } from '@/rendering/render-pipeline';
-import type { GeoJsonObject } from 'geojson';
+import type { TypedGeoPath } from '@/rendering/geo-path';
 
 const MEAN_MOON_DIST_AU = 0.00257;
 
@@ -44,7 +44,7 @@ export const tideLayer: RenderLayer = {
 
 function drawBulge(
   ctx: CanvasRenderingContext2D,
-  pathGen: any,
+  pathGen: TypedGeoPath,
   lon: number,
   lat: number,
   alpha: number,
@@ -53,14 +53,14 @@ function drawBulge(
   // Outer glow
   const outer = geoCircle().center([lon, lat]).radius(55)();
   ctx.beginPath();
-  pathGen(outer as GeoJsonObject);
+  pathGen(outer);
   ctx.fillStyle = `rgba(${rgb}, ${alpha * 0.4})`;
   ctx.fill();
 
   // Inner core
   const inner = geoCircle().center([lon, lat]).radius(25)();
   ctx.beginPath();
-  pathGen(inner as GeoJsonObject);
+  pathGen(inner);
   ctx.fillStyle = `rgba(${rgb}, ${alpha})`;
   ctx.fill();
 }

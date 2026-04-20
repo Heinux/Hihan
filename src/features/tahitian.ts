@@ -117,7 +117,7 @@ export function buildTahitianYear(huriamaStartJD: number, hemisphere: 'N' | 'S')
   //   S hemisphere: autumn = March (index 0)
   //   N hemisphere: autumn = September (index 2)
   const p1EquinoxTarget = hemisphere === 'S' ? 0 : 2;
-  let p1EqJD = getSolarEventJD(p1EquinoxYear, p1EquinoxTarget);
+  const p1EqJD = getSolarEventJD(p1EquinoxYear, p1EquinoxTarget);
   const taaooaInP1 = cursor < p1EqJD;
 
   if (taaooaInP1) {
@@ -155,7 +155,7 @@ export function buildTahitianYear(huriamaStartJD: number, hemisphere: 'N' | 'S')
   //   hemisphere S : printemps = septembre (index 2)
   //   hemisphere N : printemps = mars (index 0)
   const p2EquinoxTarget = hemisphere === 'S' ? 2 : 0;
-  let p2EqJD = getSolarEventJD(p2EquinoxYear, p2EquinoxTarget);
+  const p2EqJD = getSolarEventJD(p2EquinoxYear, p2EquinoxTarget);
 
   if (cursor < p2EqJD) {
     if (taaooaInP1) {

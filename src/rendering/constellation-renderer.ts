@@ -1,4 +1,5 @@
-import type { GeoProjection, GeoPath } from 'd3';
+import type { GeoProjection } from 'd3';
+import type { TypedGeoPath } from '@/rendering/geo-path';
 import { precessJ2000ToDate, normLon } from '@/core/astronomy';
 import { zoomLabelScale } from '@/core/constants';
 import { placeLabel } from '@/rendering/renderer';
@@ -100,7 +101,7 @@ export function drawNavStars(
   gmst: number,
   T: number,
   projection: GeoProjection,
-  _pathGen: GeoPath,
+  _pathGen: TypedGeoPath,
   placedLabels: LabelBox[],
   vs: number = 1,
   zoomK: number = 1,

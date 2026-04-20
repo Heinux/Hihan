@@ -80,7 +80,7 @@ export function computeBodyPositions(params: BodyComputeParams): BodyComputeResu
         dist = equ.dist;
         _equCache[body.id] = { ra, dec, dist };
       }
-      let lon = normLon((ra - gmst) * 15);
+      const lon = normLon((ra - gmst) * 15);
       const lat = dec;
 
       if (body.id === 'Sun') { sunLon = lon; sunLat = lat; }

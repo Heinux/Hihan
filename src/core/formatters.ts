@@ -81,6 +81,6 @@ export function formatCountdown(ms: number): string {
   const d: number = Math.floor(abs / MS_PER_DAY);
   const h: number = Math.floor((abs % MS_PER_DAY) / MS_PER_HOUR);
   const m: number = Math.floor((abs % MS_PER_HOUR) / MS_PER_MINUTE);
-  let str: string = d > 0 ? `${d}j ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+  const str: string = d > 0 ? `${d}j ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
   return past ? `Il y a ${str}` : `Dans ${str}`;
 }

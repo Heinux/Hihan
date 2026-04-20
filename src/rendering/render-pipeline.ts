@@ -3,17 +3,22 @@ import type { CanvasRenderer } from '@/rendering/renderer';
 import type { DSOManager } from '@/features/dso';
 import type { AlertSystem } from '@/features/alerts';
 import type { NEOManager } from '@/features/neo';
-import type { GeoProjection, GeoPath } from 'd3';
+import type { WindParticleSystem } from '@/rendering/wind-particles';
+import type { GeoProjection } from 'd3';
+import type { TypedGeoPath } from '@/rendering/geo-path';
 import type * as Astronomy from 'astronomy-engine';
 
 
 export interface RenderDeps {
   renderer: CanvasRenderer;
   projection: GeoProjection;
-  pathGen: GeoPath;
+  pathGen: TypedGeoPath;
   dsoManager: DSOManager;
   alertSystem: AlertSystem;
   neoManager?: NEOManager;
+  windSystem?: WindParticleSystem;
+  alertSiteEl: HTMLSelectElement | null;
+  alertPrecEl: HTMLInputElement | null;
   frame: FrameContext;
 }
 
@@ -42,6 +47,7 @@ export class RenderPipeline {
 export interface FrameContext {
   jd: number;
   T: number;
+  dt: number;
   epsRad: number;
   gmst: number;
   moonPhaseDeg: number;
@@ -63,6 +69,8 @@ import { drawConstellations, drawNavStars, drawCities } from '@/rendering/conste
 import { drawComets } from '@/rendering/comet-renderer';
 import { tideLayer } from '@/rendering/tide-layer';
 import { pouLayer, ruaLayer } from '@/rendering/rua-pou-layer';
+import { windRoseLayer } from '@/rendering/wind-rose-layer';
+import { windParticlesLayer } from '@/rendering/wind-particles-layer';
 import { ZODIAC_SIGNS, J2000_EPOCH, zoomLabelScale } from '@/core/constants';
 import { CITIES, SITE_MAP } from '@/data/cities';
 
@@ -221,16 +229,13 @@ export const citiesLayer: RenderLayer = {
 };
 
 // 13. Transit alerts — site marker + checkTransitAlerts
-let _cachedAlertSiteEl: HTMLSelectElement | null = null;
-let _cachedAlertPrecEl: HTMLInputElement | null = null;
 
 export const transitAlertsLayer: RenderLayer = {
   name: 'transit-alerts',
   enabled: (state) => state.isVisible('alertEnabled'),
   render(ctx, state, deps) {
     const frame: FrameContext = deps.frame;
-    if (!_cachedAlertSiteEl) _cachedAlertSiteEl = document.getElementById('alertSite') as HTMLSelectElement | null;
-    const siteKey = _cachedAlertSiteEl?.value;
+    const siteKey = deps.alertSiteEl?.value;
     const site = siteKey ? SITE_MAP[siteKey] : undefined;
     if (!site) return;
     const z = zoomLabelScale(state.zoomK);
@@ -239,8 +244,7 @@ export const transitAlertsLayer: RenderLayer = {
     const coords = deps.projection([site.lon, site.lat]);
     if (coords) {
       const [sx, sy] = coords;
-      if (!_cachedAlertPrecEl) _cachedAlertPrecEl = document.getElementById('alertPrecision') as HTMLInputElement | null;
-      const prec = parseFloat(_cachedAlertPrecEl?.value ?? '0.5') || 0.5;
+      const prec = parseFloat(deps.alertPrecEl?.value ?? '0.5') || 0.5;
       const scale = deps.projection.scale();
       const precPx = prec * scale / 90 * state.zoomK;
       ctx.save();
@@ -291,5 +295,7 @@ export function createDefaultPipeline(): RenderPipeline {
   pipeline.addLayer(transitAlertsLayer);
   pipeline.addLayer(tideLayer);
   pipeline.addLayer(sphereOutlineLayer);
+  pipeline.addLayer(windRoseLayer);
+  pipeline.addLayer(windParticlesLayer);
   return pipeline;
 }
