@@ -63,20 +63,16 @@ export function setupInteraction(
 
   // ── Resize ──
   function resize(): void {
-    state.W = window.innerWidth;
-    state.H = window.innerHeight;
+    state.W = canvas.clientWidth || window.innerWidth;
+    state.H = canvas.clientHeight || window.innerHeight;
     state.viewScale = Math.min(1, state.W / 550);
     const dpr = window.devicePixelRatio || 1;
     canvas.width = state.W * dpr;
     canvas.height = state.H * dpr;
-    canvas.style.width = state.W + 'px';
-    canvas.style.height = state.H + 'px';
     // Resize secondary canvases if present
     if (deps && deps.enochCanvas) {
       deps.enochCanvas.width = state.W * dpr;
       deps.enochCanvas.height = state.H * dpr;
-      deps.enochCanvas.style.width = state.W + 'px';
-      deps.enochCanvas.style.height = state.H + 'px';
     }
     if (deps && deps.applyProjection) deps.applyProjection();
     state.needsRedraw = true;
@@ -409,6 +405,10 @@ const handleMouseUp = (e: MouseEvent): void => {
 
   // ── Window resize ──
   track(window, 'resize', resize as EventListener);
+
+  // ── PWA / tab restore: re-size canvas when page becomes visible ──
+  track(document, 'visibilitychange', () => { if (!document.hidden) resize(); });
+  track(window, 'pageshow', resize as EventListener);
 
   // ── Cleanup ──
   return function cleanup(): void {

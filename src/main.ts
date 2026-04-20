@@ -192,18 +192,14 @@ const { updateToggleArrows, addCloseButtons } = setupPanelToggles(state);
 
 // ── Initial resize ─────────────────────────────────────────────────
 
-state.W = window.innerWidth;
-state.H = window.innerHeight;
+state.W = canvas.clientWidth || window.innerWidth;
+state.H = canvas.clientHeight || window.innerHeight;
 state.viewScale = Math.min(1, state.W / MOBILE_VIEWPORT_THRESHOLD);
 const dpr = window.devicePixelRatio || 1;
 canvas.width = state.W * dpr;
 canvas.height = state.H * dpr;
-canvas.style.width = state.W + 'px';
-canvas.style.height = state.H + 'px';
 enochCanvas.width = state.W * dpr;
 enochCanvas.height = state.H * dpr;
-enochCanvas.style.width = state.W + 'px';
-enochCanvas.style.height = state.H + 'px';
 applyProjection();
 
 if (typeof WORLD_DATA !== 'undefined') {
@@ -225,7 +221,7 @@ const { updateButtons: updateWindTideButtons } = setupWindTideControls(state);
 
 // ── FPS counter ───────────────────────────────────────────────────────
 const fpsEl = document.createElement('div');
-fpsEl.style.cssText = 'position:fixed;top:6px;right:6px;font:500 11px/1 "DM Mono",monospace;color:rgba(140,180,220,0.6);pointer-events:none;z-index:9999;user-select:none;contain:layout paint;display:flex;gap:10px;align-items:center';
+fpsEl.style.cssText = 'position:fixed;top:calc(6px + env(safe-area-inset-top, 0));right:calc(6px + env(safe-area-inset-right, 0));font:500 11px/1 "DM Mono",monospace;color:rgba(140,180,220,0.6);pointer-events:none;z-index:9999;user-select:none;contain:layout paint;display:flex;gap:10px;align-items:center';
 document.body.appendChild(fpsEl);
 const fpsTextEl = document.createElement('span');
 fpsEl.appendChild(fpsTextEl);

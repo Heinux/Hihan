@@ -39,13 +39,14 @@ export class TideUIManager {
     const rect = this.#tideCurveCanvas.getBoundingClientRect();
     const cw = Math.round(rect.width);
     if (cw <= 0) return;
+    const curveH = window.innerWidth < 640 ? 120 : 220;
     this.#tideCurveCanvas.width = cw * dpr;
-    this.#tideCurveCanvas.height = 220 * dpr;
-    this.#tideCurveCanvas.style.height = '220px';
+    this.#tideCurveCanvas.height = curveH * dpr;
+    this.#tideCurveCanvas.style.height = curveH + 'px';
     drawTideCurve({
       ctx: this.#tideCurveCtx,
       W: cw,
-      H: 220,
+      H: curveH,
       dpr,
       curve: this.#cachedTideCurve,
       isRising: this.#cachedTideState.isRising,
