@@ -13,7 +13,7 @@ export const windRoseLayer: RenderLayer = {
   render(ctx: CanvasRenderingContext2D, state: AppState, deps: RenderDeps): void {
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    updateActiveWind(deps.projection, state as WindRoseViewport, state.windGrid);
-    drawWindRose(ctx, state.W, state.H, state.enochHem);
+    updateActiveWind(state.windGrid);
+    drawWindRose(ctx, state.W, state.H, state.enochHem, deps.projection, state as WindRoseViewport);
   },
 };

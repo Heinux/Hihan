@@ -23,7 +23,7 @@
 import { TAHITIAN_WINDS } from '@/data/wind';
 import type { TahitianWind } from '@/data/wind';
 import type { WindGrid } from '@/data/wind-grid';
-import { screenToGeo } from '@/core/geo';
+import { geoToScreen } from '@/core/geo';
 
 // ── Visual parameters ───────────────────────────────────────────────
 const ROSE_RADIUS        = 56;
@@ -60,6 +60,8 @@ let _isDocked = true;       // starts docked
 let _isFixed = false;       // anchored at a custom position
 let _fixedX = 0;
 let _fixedY = 0;
+let _fixedLon = 0;
+let _fixedLat = 0;
 let _fixedRotation = 0;
 let _hoveredWindIdx: number | null = null;
 let _roseCx = 0, _roseCy = 0;
@@ -94,11 +96,13 @@ export function dockRose(): void {
   _activeWindSpeed = 0;
 }
 
-export function anchorRose(mx: number, my: number): void {
+export function anchorRose(mx: number, my: number, lon: number, lat: number): void {
   _isDocked = false;
   _isFixed = true;
   _fixedX = mx;
   _fixedY = my;
+  _fixedLon = lon;
+  _fixedLat = lat;
   _fixedRotation = _mapRotationDeg;
   _nearHome = false;
 }
@@ -118,19 +122,16 @@ export function isWindRoseFixed(): boolean {
 }
 
 // ── Compute rotation ────────────────────────────────────────────
-export function setMapRotationFromMouse(
-  mx: number,
-  my: number,
+function computeMapRotation(
+  screenX: number,
+  screenY: number,
   projection: d3.GeoProjection,
   hem: 'N' | 'S' = 'N',
   viewport?: WindRoseViewport,
-): void {
-  _mouseX = mx;
-  _mouseY = my;
-
+): number {
   const poleLat = hem === 'N' ? 90 : -90;
   const pole = projection([0, poleLat]);
-  if (!pole) return;
+  if (!pole) return 0;
 
   let poleScreenX: number;
   let poleScreenY: number;
@@ -145,12 +146,24 @@ export function setMapRotationFromMouse(
     poleScreenY = pole[1];
   }
 
-  const dx = poleScreenX - mx;
-  const dy = poleScreenY - my;
-  if (Math.hypot(dx, dy) < 0.5) return;
+  const dx = poleScreenX - screenX;
+  const dy = poleScreenY - screenY;
+  if (Math.hypot(dx, dy) < 0.5) return 0;
 
   const angleDeg = Math.atan2(dy, dx) * 180 / Math.PI;
-  _mapRotationDeg = angleDeg + (hem === 'N' ? 90 : -90);
+  return angleDeg + (hem === 'N' ? 90 : -90);
+}
+
+export function setMapRotationFromMouse(
+  mx: number,
+  my: number,
+  projection: d3.GeoProjection,
+  hem: 'N' | 'S' = 'N',
+  viewport?: WindRoseViewport,
+): void {
+  _mouseX = mx;
+  _mouseY = my;
+  _mapRotationDeg = computeMapRotation(mx, my, projection, hem, viewport);
 }
 
 // ── Hover ────────────────────────────────────────────────────────
@@ -186,8 +199,6 @@ export function checkWindHover(mx: number, my: number, visible: boolean = true):
 
 // ── GFS-reactive active wind ────────────────────────────────────
 export function updateActiveWind(
-  projection: d3.GeoProjection,
-  viewport: WindRoseViewport,
   windGrid: WindGrid | null,
 ): void {
   if (!windGrid || !_isFixed) {
@@ -196,14 +207,8 @@ export function updateActiveWind(
     return;
   }
 
-  const geo = screenToGeo(_fixedX, _fixedY, projection, viewport);
-  if (!geo) {
-    _activeWindIdx = null;
-    _activeWindSpeed = 0;
-    return;
-  }
-
-  const [lon, lat] = geo;
+  const lat = _fixedLat;
+  const lon = _fixedLon;
   const { u, v } = windGrid.interpolate(lat, lon);
   const speed = Math.sqrt(u * u + v * v);
   _activeWindSpeed = speed;
@@ -230,6 +235,8 @@ export function drawWindRose(
   W: number,
   H: number,
   _hem: 'N' | 'S' = 'N',
+  projection?: d3.GeoProjection,
+  viewport?: WindRoseViewport,
 ): void {
   const home = getHomePos(W, H);
 
@@ -240,9 +247,23 @@ export function drawWindRose(
     cy = home.y;
     rotation = 0; // North up when docked
   } else if (_isFixed) {
-    cx = _fixedX;
-    cy = _fixedY;
-    rotation = _fixedRotation;
+    // Anchor to geographic position — moves with pan/zoom but keeps fixed pixel size
+    if (projection && viewport) {
+      const screenPos = geoToScreen(_fixedLon, _fixedLat, projection, viewport);
+      if (screenPos) {
+        cx = screenPos.x;
+        cy = screenPos.y;
+        rotation = computeMapRotation(cx, cy, projection, _hem, viewport);
+      } else {
+        cx = _fixedX;
+        cy = _fixedY;
+        rotation = _fixedRotation;
+      }
+    } else {
+      cx = _fixedX;
+      cy = _fixedY;
+      rotation = _fixedRotation;
+    }
   } else {
     cx = _mouseX;
     cy = _mouseY;

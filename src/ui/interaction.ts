@@ -1,5 +1,6 @@
 import { ZOOM, WHEEL_SENSITIVITY, WHEEL_ZOOM_FACTOR, HOVER_MIN_RADIUS, HOVER_EXTRA_RADIUS, PAN_CLAMP_FACTOR } from '@/core/constants';
 import type { BodyPosition } from '@/core/state';
+import { screenToGeo } from '@/core/geo';
 import { checkWindHover, getHoveredWind, setMapRotationFromMouse, isWindRoseFixed, isRoseDocked, isRoseHit, isNearHome, dockRose, anchorRose, undockRose } from '@/rendering/wind-layer';
 import type { WindRoseViewport } from '@/rendering/wind-layer';
 import { positionTooltip as calcTooltipPos, applyTooltipPosition } from '@/ui/tooltip';
@@ -213,7 +214,8 @@ const handleMouseUp = (e: MouseEvent): void => {
         if (isNearHome(e.clientX, e.clientY, state.W, state.H)) {
           dockRose();
         } else {
-          anchorRose(e.clientX, e.clientY);
+          const geo = screenToGeo(e.clientX, e.clientY, projection, state as WindRoseViewport);
+          anchorRose(e.clientX, e.clientY, geo ? geo[0] : 0, geo ? geo[1] : 0);
         }
         state.needsRedraw = true;
       }
@@ -325,7 +327,8 @@ const handleMouseUp = (e: MouseEvent): void => {
               if (isNearHome(tx, ty, state.W, state.H)) {
                 dockRose();
               } else {
-                anchorRose(tx, ty);
+                const geo = screenToGeo(tx, ty, projection, state as WindRoseViewport);
+                anchorRose(tx, ty, geo ? geo[0] : 0, geo ? geo[1] : 0);
               }
             }
           } else {
@@ -333,7 +336,8 @@ const handleMouseUp = (e: MouseEvent): void => {
             if (isNearHome(tx, ty, state.W, state.H)) {
               dockRose();
             } else {
-              anchorRose(tx, ty);
+              const geo = screenToGeo(tx, ty, projection, state as WindRoseViewport);
+              anchorRose(tx, ty, geo ? geo[0] : 0, geo ? geo[1] : 0);
             }
           }
 

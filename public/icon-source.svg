@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#04080f"/>
+  <!-- Outer ring -->
+  <circle cx="256" cy="256" r="230" fill="none" stroke="rgba(140,180,220,0.12)" stroke-width="1"/>
+  <!-- Projection circles -->
+  <circle cx="256" cy="256" r="200" fill="none" stroke="rgba(140,180,220,0.3)" stroke-width="1.5"/>
+  <circle cx="256" cy="256" r="133" fill="none" stroke="rgba(140,180,220,0.18)" stroke-width="0.8"/>
+  <circle cx="256" cy="256" r="67" fill="none" stroke="rgba(140,180,220,0.12)" stroke-width="0.6"/>
+  <!-- Cardinal cross -->
+  <line x1="256" y1="56" x2="256" y2="456" stroke="rgba(140,180,220,0.15)" stroke-width="0.8"/>
+  <line x1="56" y1="256" x2="456" y2="256" stroke="rgba(140,180,220,0.15)" stroke-width="0.8"/>
+  <!-- Diagonal lines -->
+  <line x1="114" y1="114" x2="398" y2="398" stroke="rgba(140,180,220,0.08)" stroke-width="0.5"/>
+  <line x1="398" y1="114" x2="114" y2="398" stroke="rgba(140,180,220,0.08)" stroke-width="0.5"/>
+  <!-- Zodiac arc dots -->
+  <circle cx="256" cy="68" r="2" fill="rgba(255,200,80,0.6)"/>
+  <circle cx="340" cy="90" r="2" fill="rgba(255,200,80,0.5)"/>
+  <circle cx="410" cy="150" r="2" fill="rgba(255,200,80,0.5)"/>
+  <circle cx="444" cy="230" r="2" fill="rgba(255,200,80,0.6)"/>
+  <circle cx="444" cy="282" r="2" fill="rgba(255,200,80,0.5)"/>
+  <circle cx="410" cy="362" r="2" fill="rgba(255,200,80,0.5)"/>
+  <circle cx="340" cy="422" r="2" fill="rgba(255,200,80,0.6)"/>
+  <circle cx="256" cy="444" r="2" fill="rgba(255,200,80,0.5)"/>
+  <circle cx="172" cy="422" r="2" fill="rgba(255,200,80,0.5)"/>
+  <circle cx="102" cy="362" r="2" fill="rgba(255,200,80,0.6)"/>
+  <circle cx="68" cy="282" r="2" fill="rgba(255,200,80,0.5)"/>
+  <circle cx="68" cy="230" r="2" fill="rgba(255,200,80,0.5)"/>
+  <circle cx="102" cy="150" r="2" fill="rgba(255,200,80,0.6)"/>
+  <circle cx="172" cy="90" r="2" fill="rgba(255,200,80,0.5)"/>
+  <!-- Bright navigation stars -->
+  <circle cx="256" cy="120" r="3.5" fill="#e0e8ff"/>
+  <circle cx="180" cy="200" r="2.8" fill="#e0e8ff"/>
+  <circle cx="340" cy="190" r="2.5" fill="#e0e8ff"/>
+  <circle cx="220" cy="340" r="2.8" fill="#e0e8ff"/>
+  <circle cx="310" cy="310" r="2" fill="#c8d8f0"/>
+  <circle cx="150" cy="290" r="2.2" fill="#e0e8ff"/>
+  <circle cx="370" cy="260" r="1.8" fill="#c8d8f0"/>
+  <!-- Constellation lines (simplified) -->
+  <polyline points="256,120 180,200 150,290 220,340" fill="none" stroke="rgba(140,180,220,0.25)" stroke-width="0.7"/>
+  <polyline points="340,190 370,260 310,310 220,340" fill="none" stroke="rgba(140,180,220,0.25)" stroke-width="0.7"/>
+  <!-- Small field stars -->
+  <circle cx="200" cy="150" r="1" fill="rgba(200,210,240,0.4)"/>
+  <circle cx="300" cy="140" r="1" fill="rgba(200,210,240,0.3)"/>
+  <circle cx="380" cy="210" r="1" fill="rgba(200,210,240,0.4)"/>
+  <circle cx="130" cy="250" r="1" fill="rgba(200,210,240,0.3)"/>
+  <circle cx="280" cy="260" r="1" fill="rgba(200,210,240,0.35)"/>
+  <circle cx="250" cy="380" r="1" fill="rgba(200,210,240,0.3)"/>
+  <circle cx="190" cy="170" r="0.8" fill="rgba(200,210,240,0.25)"/>
+  <circle cx="320" cy="240" r="0.8" fill="rgba(200,210,240,0.25)"/>
+  <circle cx="160" cy="320" r="0.8" fill="rgba(200,210,240,0.25)"/>
+  <circle cx="350" cy="330" r="0.8" fill="rgba(200,210,240,0.25)"/>
+  <circle cx="280" cy="180" r="0.8" fill="rgba(200,210,240,0.25)"/>
+  <!-- Center point (observer's zenith) -->
+  <circle cx="256" cy="256" r="2" fill="rgba(255,200,80,0.5)"/>
+</svg>

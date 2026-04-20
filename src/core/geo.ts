@@ -158,6 +158,23 @@ export interface ViewportLike {
   viewScale: number;
 }
 
+/** Project geographic [lon, lat] to screen coordinates using the d3 projection
+ *  and viewport transform. Returns null if the projection returns null. */
+export function geoToScreen(
+  lon: number,
+  lat: number,
+  projection: GeoProjection,
+  viewport: ViewportLike,
+): { x: number; y: number } | null {
+  const proj = projection([lon, lat]);
+  if (!proj) return null;
+  const { W, H, panX, panY, zoomK, viewScale: vs } = viewport;
+  const Wv = W / vs, Hv = H / vs;
+  const screenX = vs * ((proj[0] - Wv / 2) * zoomK + Wv / 2 + panX / vs);
+  const screenY = vs * ((proj[1] - Hv / 2) * zoomK + Hv / 2 + panY / vs);
+  return { x: screenX, y: screenY };
+}
+
 /** Convert screen coordinates to geographic [lon, lat] by inverting
  *  the viewport transform + d3 projection. Returns null if outside the projection domain. */
 export function screenToGeo(

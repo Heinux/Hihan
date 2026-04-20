@@ -14,3 +14,6 @@ doc/
 
 # Environment variables
 .env*
+
+# PWA dev service worker
+dev-dist/

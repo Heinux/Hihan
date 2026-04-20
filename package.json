@@ -32,7 +32,8 @@
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "typecheck": "tsc --noEmit",
-    "prepare": "husky"
+    "prepare": "husky",
+    "generate-icons": "npx @vite-pwa/assets-generator --preset minimal public/icon-source.svg"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
@@ -42,6 +43,7 @@
     "@types/node": "^25.6.0",
     "@types/pako": "^2.0.4",
     "@types/topojson-client": "^3.1.5",
+    "@vite-pwa/assets-generator": "^1.0.2",
     "@vitest/coverage-v8": "^3.2.4",
     "eslint": "^9.39.4",
     "husky": "^9.1.7",
@@ -49,6 +51,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.58.2",
     "vite": "^6.3.2",
+    "vite-plugin-pwa": "^1.2.0",
     "vitest": "^3.2.4"
   },
   "dependencies": {
