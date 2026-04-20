@@ -92,7 +92,7 @@ html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); col
   z-index:200; transition:transform 0.4s cubic-bezier(0.4,0,0.2,1); overflow-y:auto;
   pointer-events: auto; will-change:transform; contain:layout paint;
 }
-#panel.hidden { transform:translateX(calc(-1 * var(--panel-w))); }
+#panel.hidden { transform:translateX(calc(-1 * var(--panel-w))); pointer-events:none; }
 #panel::-webkit-scrollbar { width:var(--radius-xs); }
 #panel::-webkit-scrollbar-thumb { background:rgba(100,130,170,0.15); border-radius:var(--radius-xs); }
 
@@ -1210,6 +1210,7 @@ input[type=range]::-webkit-slider-thumb:hover { background:rgba(190,215,245,1); 
   }
   #panel.hidden {
     transform: translateX(-100vw);
+    pointer-events: none;
   }
   .panel-close {
     display: flex;
