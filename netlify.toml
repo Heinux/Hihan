@@ -1,0 +1,43 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+# Cache headers for wind data
+[[headers]]
+  for = "/wind/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600, stale-while-revalidate=86400"
+
+# Edge function for dynamic OG meta tags
+[[edge_functions]]
+  path = "/*"
+  function = "og-meta"
+
+# Clean URL for OG images per date (Facebook-friendly, no query params)
+[[redirects]]
+  from = "/og/*"
+  to = "/.netlify/functions/og"
+  status = 200
+
+# API functions
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# SPA fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[functions]
+  node_bundler = "esbuild"
+
+[functions.og]
+  included_files = [
+    "./node_modules/@resvg/resvg-wasm/index_bg.wasm",
+    "./netlify/functions/fonts/*",
+  ]
+  maxDuration = 26

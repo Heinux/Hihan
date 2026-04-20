@@ -1,0 +1,60 @@
+{
+  "name": "hihan",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Interactive celestial planisphere with Enoch, Hebrew, Islamic, and Tahitian calendars",
+  "author": "Heinux",
+  "license": "MIT",
+  "keywords": [
+    "astronomy",
+    "planisphere",
+    "sky-map",
+    "enoch-calendar",
+    "hebrew-calendar",
+    "d3",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Heinux/hihan.git"
+  },
+  "homepage": "https://hihan.netlify.app",
+  "bugs": {
+    "url": "https://github.com/Heinux/hihan/issues"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vitest run && tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@netlify/edge-functions": "^3.0.6",
+    "@types/d3": "^7.4.3",
+    "@types/d3-geo": "^3.1.0",
+    "@types/node": "^25.6.0",
+    "@types/pako": "^2.0.4",
+    "@types/topojson-client": "^3.1.5",
+    "eslint": "^9.39.4",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.58.2",
+    "vite": "^6.3.2",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@netlify/functions": "^5.1.5",
+    "@resvg/resvg-wasm": "^2.6.2",
+    "astronomy-engine": "^2.1.19",
+    "d3-geo": "^3.1.1",
+    "satori": "^0.26.0",
+    "satori-html": "^0.3.2",
+    "svg2png-wasm": "^1.4.1",
+    "topojson-client": "^3.1.0"
+  }
+}
