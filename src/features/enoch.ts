@@ -319,14 +319,51 @@ function computeEclipseMarkers(
   return markers;
 }
 
+// Offscreen canvas cache for the Enoch wheel — only redraws when state changes
+let _enochOffCanvas: HTMLCanvasElement | null = null;
+let _enochOffCtx: CanvasRenderingContext2D | null = null;
+let _enochCacheKey = '';
+
 export function drawEnochWheel(state: AppState, enochCtx: CanvasRenderingContext2D, showEnoch: boolean, snap?: CalendarSnapshot): void {
   const vs = state.viewScale ?? 1;
   const Wv = state.W / vs, Hv = state.H / vs;
-  const dpr = window.devicePixelRatio || 1;
-  enochCtx.setTransform(dpr * vs, 0, 0, dpr * vs, 0, 0);
-  enochCtx.clearRect(0, 0, Wv, Hv);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-  if (!showEnoch) return;
+  // Cache key: second-precision JD + hemisphere + timezone + viewport
+  const jd = state.getAstroJD();
+  const cacheKey = `${Math.round(jd * 86400)}|${state.enochHem}|${state.userTimezone}|${Math.round(state.zoomK * 100)}|${Math.round(state.panX)}|${Math.round(state.panY)}`;
+
+  if (cacheKey === _enochCacheKey && _enochOffCanvas) {
+    // Cache hit — blit directly
+    enochCtx.setTransform(1, 0, 0, 1, 0, 0);
+    enochCtx.clearRect(0, 0, enochCtx.canvas.width, enochCtx.canvas.height);
+    enochCtx.drawImage(_enochOffCanvas, 0, 0);
+    return;
+  }
+
+  // Ensure offscreen canvas exists
+  if (!_enochOffCanvas) {
+    _enochOffCanvas = document.createElement('canvas');
+    _enochOffCtx = _enochOffCanvas.getContext('2d')!;
+  }
+  const pxW = Math.round(Wv * dpr * vs);
+  const pxH = Math.round(Hv * dpr * vs);
+  _enochOffCanvas.width = pxW;
+  _enochOffCanvas.height = pxH;
+
+  // Render to offscreen canvas
+  const off = _enochOffCtx!;
+  off.setTransform(dpr * vs, 0, 0, dpr * vs, 0, 0);
+  off.clearRect(0, 0, Wv, Hv);
+
+  if (!showEnoch) {
+    _enochCacheKey = cacheKey;
+    // Blit empty offscreen
+    enochCtx.setTransform(1, 0, 0, 1, 0, 0);
+    enochCtx.clearRect(0, 0, enochCtx.canvas.width, enochCtx.canvas.height);
+    enochCtx.drawImage(_enochOffCanvas, 0, 0);
+    return;
+  }
 
   const cx = Wv / 2 + state.panX / vs;
   const cy = Hv / 2 + state.panY / vs;
@@ -357,18 +394,18 @@ export function drawEnochWheel(state: AppState, enochCtx: CanvasRenderingContext
   const wheelRot = sunAngle - dayAngleOnWheel;
 
   // ── Draw season arcs ────────────────────────────────────────────
-  enochCtx.save();
-  enochCtx.translate(cx, cy);
-  enochCtx.rotate(wheelRot);
+  off.save();
+  off.translate(cx, cy);
+  off.rotate(wheelRot);
 
   getSeasonArcs(state.enochHem).forEach(season => {
     const sd = offs[season.months[0]];
     const ed = offs[season.months[season.months.length - 1]] + ENOCH_MONTHS[season.months[season.months.length - 1]].days;
     const a1 = (sd / ENOCH_YEAR_DAYS) * TAU, a2 = (ed / ENOCH_YEAR_DAYS) * TAU;
-    enochCtx.beginPath(); enochCtx.arc(0, 0, r1, a1, a2); enochCtx.arc(0, 0, r0, a2, a1, true);
-    enochCtx.fillStyle = season.color; enochCtx.fill();
-    enochCtx.strokeStyle = season.stroke; enochCtx.stroke();
-    drawTextOnArc({ ctx: enochCtx, text: season.name, cx: 0, cy: 0, radius: (r0 + r1) / 2, globalRot: wheelRot, localA1: a1, localA2: a2,
+    off.beginPath(); off.arc(0, 0, r1, a1, a2); off.arc(0, 0, r0, a2, a1, true);
+    off.fillStyle = season.color; off.fill();
+    off.strokeStyle = season.stroke; off.stroke();
+    drawTextOnArc({ ctx: off, text: season.name, cx: 0, cy: 0, radius: (r0 + r1) / 2, globalRot: wheelRot, localA1: a1, localA2: a2,
       font: `500 ${baseR * 0.024}px "DM Mono"`, color: season.stroke });
   });
 
@@ -377,17 +414,17 @@ export function drawEnochWheel(state: AppState, enochCtx: CanvasRenderingContext
     const sd = offs[i], ed = sd + month.days;
     const a1 = (sd / ENOCH_YEAR_DAYS) * TAU, a2 = (ed / ENOCH_YEAR_DAYS) * TAU;
     const isCur = currentMonthIdx === i;
-    enochCtx.beginPath(); enochCtx.arc(0, 0, r2, a1, a2); enochCtx.arc(0, 0, r1, a2, a1, true);
-    if (isCur) { enochCtx.fillStyle = 'rgba(255,255,255,0.12)'; enochCtx.fill(); }
-    enochCtx.strokeStyle = 'rgba(120,150,190,0.15)'; enochCtx.stroke();
-    drawTextOnArc({ ctx: enochCtx, text: month.name, cx: 0, cy: 0, radius: (r1 + r2) / 2, globalRot: wheelRot, localA1: a1, localA2: a2,
+    off.beginPath(); off.arc(0, 0, r2, a1, a2); off.arc(0, 0, r1, a2, a1, true);
+    if (isCur) { off.fillStyle = 'rgba(255,255,255,0.12)'; off.fill(); }
+    off.strokeStyle = 'rgba(120,150,190,0.15)'; off.stroke();
+    drawTextOnArc({ ctx: off, text: month.name, cx: 0, cy: 0, radius: (r1 + r2) / 2, globalRot: wheelRot, localA1: a1, localA2: a2,
       font: `300 ${baseR * 0.026}px "DM Mono"`, color: isCur ? '#fff' : 'rgba(200,220,255,0.5)' });
   });
 
   const hem = state.enochHem;
   const tahState = computeTahitianState(jdForLabel, hem);
 
-  enochCtx.restore();
+  off.restore();
 
   // ── Calcul des éclipses ─────────────────────────────────────────
   const eclipseMarkers = computeEclipseMarkers(state, wheelRot, preciseDay);
@@ -402,18 +439,18 @@ export function drawEnochWheel(state: AppState, enochCtx: CanvasRenderingContext
   const my = cy + markerR * Math.sin(sunAngle);
 
   // Sun glow halo (radial gradient replaces shadowBlur)
-  const sunGlow = enochCtx.createRadialGradient(mx, my, 0, mx, my, 18);
+  const sunGlow = off.createRadialGradient(mx, my, 0, mx, my, 18);
   sunGlow.addColorStop(0, 'rgba(255,170,0,0.55)');
   sunGlow.addColorStop(1, 'rgba(255,170,0,0)');
-  enochCtx.beginPath();
-  enochCtx.arc(mx, my, 18, 0, TAU);
-  enochCtx.fillStyle = sunGlow;
-  enochCtx.fill();
+  off.beginPath();
+  off.arc(mx, my, 18, 0, TAU);
+  off.fillStyle = sunGlow;
+  off.fill();
 
-  enochCtx.beginPath();
-  enochCtx.arc(mx, my, 5, 0, TAU);
-  enochCtx.fillStyle = '#ffcc00';
-  enochCtx.fill();
+  off.beginPath();
+  off.arc(mx, my, 5, 0, TAU);
+  off.fillStyle = '#ffcc00';
+  off.fill();
 
   // ── Calcul position Lune de base ────────────────────────────────
   const moonSX = state.moonScreenX !== null ? state.moonScreenX / vs : null;
@@ -429,27 +466,27 @@ export function drawEnochWheel(state: AppState, enochCtx: CanvasRenderingContext
   let drawMoonX = cx + markerR * Math.cos(moonAngle);
   let drawMoonY = cy + markerR * Math.sin(moonAngle);
   let currentVisualAngle = moonAngle;
-  
+
   // Taille dynamique : 4 normalement, grandit jusqu'à 5 pendant l'éclipse solaire
   let moonRadius = 4;
 
   if (solarEclipse && solarEclipse.currentPercent > 0) {
     const progress = solarEclipse.currentPercent / 100;
     moonRadius = 4 + progress * 1; // De 4 à 5
-    
+
     // Calcul de l'angle le plus court entre la lune et le soleil (respecte l'orientation hémisphérique)
     let angleDiff = sunAngle - moonAngle;
     while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
     while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-    
+
     currentVisualAngle = moonAngle + angleDiff * progress;
     drawMoonX = cx + markerR * Math.cos(currentVisualAngle);
     drawMoonY = cy + markerR * Math.sin(currentVisualAngle);
   }
 
-  enochCtx.save();
-  enochCtx.beginPath();
-  enochCtx.arc(drawMoonX, drawMoonY, moonRadius, 0, TAU);
+  off.save();
+  off.beginPath();
+  off.arc(drawMoonX, drawMoonY, moonRadius, 0, TAU);
 
   if (lunarEclipse && lunarEclipse.currentPercent > 0) {
     const shadowAngle = Math.atan2(my - drawMoonY, mx - drawMoonX);
@@ -458,38 +495,38 @@ export function drawEnochWheel(state: AppState, enochCtx: CanvasRenderingContext
     const gradY1 = drawMoonY - Math.sin(shadowAngle) * 5;
     const gradX2 = drawMoonX + Math.cos(shadowAngle) * 5;
     const gradY2 = drawMoonY + Math.sin(shadowAngle) * 5;
-    const moonGrad = enochCtx.createLinearGradient(gradX1, gradY1, gradX2, gradY2);
-    moonGrad.addColorStop(0, '#e8c8a0'); 
+    const moonGrad = off.createLinearGradient(gradX1, gradY1, gradX2, gradY2);
+    moonGrad.addColorStop(0, '#e8c8a0');
     moonGrad.addColorStop(Math.max(0.4, 1 - intensity), '#a03020');
     moonGrad.addColorStop(1, `rgba(60, 0, 0, ${intensity})`);
-    enochCtx.fillStyle = moonGrad;
+    off.fillStyle = moonGrad;
     // Moon glow halo for lunar eclipse (radial gradient replaces shadowBlur)
-    enochCtx.fill();
-    const moonEclGlow = enochCtx.createRadialGradient(drawMoonX, drawMoonY, moonRadius, drawMoonX, drawMoonY, moonRadius + 12);
+    off.fill();
+    const moonEclGlow = off.createRadialGradient(drawMoonX, drawMoonY, moonRadius, drawMoonX, drawMoonY, moonRadius + 12);
     moonEclGlow.addColorStop(0, `rgba(180, 40, 20, ${intensity * 0.35})`);
     moonEclGlow.addColorStop(1, 'rgba(180, 40, 20, 0)');
-    enochCtx.beginPath();
-    enochCtx.arc(drawMoonX, drawMoonY, moonRadius + 12, 0, TAU);
-    enochCtx.fillStyle = moonEclGlow;
-    enochCtx.fill();
+    off.beginPath();
+    off.arc(drawMoonX, drawMoonY, moonRadius + 12, 0, TAU);
+    off.fillStyle = moonEclGlow;
+    off.fill();
  } else if (solarEclipse && solarEclipse.currentPercent > 0) {
     const intensity = solarEclipse.currentPercent / 100;
-    enochCtx.fillStyle = `rgba(0, 0, 0, ${intensity})`;
-    enochCtx.fill();
+    off.fillStyle = `rgba(0, 0, 0, ${intensity})`;
+    off.fill();
   } else {
-    enochCtx.fillStyle = '#ffffff';
-    enochCtx.fill();
+    off.fillStyle = '#ffffff';
+    off.fill();
     // Moon glow halo (radial gradient replaces shadowBlur)
-    const moonGlow = enochCtx.createRadialGradient(drawMoonX, drawMoonY, moonRadius, drawMoonX, drawMoonY, moonRadius + 10);
+    const moonGlow = off.createRadialGradient(drawMoonX, drawMoonY, moonRadius, drawMoonX, drawMoonY, moonRadius + 10);
     moonGlow.addColorStop(0, 'rgba(170,212,255,0.35)');
     moonGlow.addColorStop(1, 'rgba(170,212,255,0)');
-    enochCtx.beginPath();
-    enochCtx.arc(drawMoonX, drawMoonY, moonRadius + 10, 0, TAU);
-    enochCtx.fillStyle = moonGlow;
-    enochCtx.fill();
+    off.beginPath();
+    off.arc(drawMoonX, drawMoonY, moonRadius + 10, 0, TAU);
+    off.fillStyle = moonGlow;
+    off.fill();
   }
 
-  enochCtx.restore();
+  off.restore();
 
   // Detect when moon is near sun on the wheel — flip moon labels to opposite side
   let moonSunDiff = currentVisualAngle - sunAngle;
@@ -505,64 +542,64 @@ export function drawEnochWheel(state: AppState, enochCtx: CanvasRenderingContext
       : Math.cos(currentVisualAngle) > 0; // Utilise l'angle visuel pour l'alignement
     const fontSize = Math.max(12, baseR * 0.026);
     const moonOffsetX = isMoonRightSide ? 15 : -15;
-    
-    enochCtx.textAlign = isMoonRightSide ? 'left' : 'right';
 
-    enochCtx.font = `300 ${fontSize}px "DM Mono", monospace`;
-    enochCtx.fillStyle = 'rgba(180,210,255,0.75)';
-    fillTextGlow(enochCtx, tarena.name, drawMoonX + moonOffsetX, drawMoonY, 'rgba(0,0,0,0.8)', 3);
+    off.textAlign = isMoonRightSide ? 'left' : 'right';
+
+    off.font = `300 ${fontSize}px "DM Mono", monospace`;
+    off.fillStyle = 'rgba(180,210,255,0.75)';
+    fillTextGlow(off, tarena.name, drawMoonX + moonOffsetX, drawMoonY, 'rgba(0,0,0,0.8)', 3);
 
     const dotRadius = 2.5;
     const dotSpacing = 9;
     const dotY = drawMoonY + fontSize * 0.8;
     const startX = drawMoonX + moonOffsetX;
 
-    enochCtx.fillStyle = '#ffffff';
+    off.fillStyle = '#ffffff';
 
     for (let i = 0; i < tarena.energy; i++) {
       const xOffset = isMoonRightSide ? (i * dotSpacing) : -(i * dotSpacing);
       const dotX = startX + xOffset;
       // Glow per dot (radial gradient replaces shadowBlur)
-      const dotGlow = enochCtx.createRadialGradient(dotX, dotY, 0, dotX, dotY, dotRadius * 4);
+      const dotGlow = off.createRadialGradient(dotX, dotY, 0, dotX, dotY, dotRadius * 4);
       dotGlow.addColorStop(0, 'rgba(170,212,255,0.4)');
       dotGlow.addColorStop(1, 'rgba(170,212,255,0)');
-      enochCtx.beginPath();
-      enochCtx.arc(dotX, dotY, dotRadius * 4, 0, Math.PI * 2);
-      enochCtx.fillStyle = dotGlow;
-      enochCtx.fill();
-      enochCtx.beginPath();
-      enochCtx.arc(dotX, dotY, dotRadius, 0, Math.PI * 2);
-      enochCtx.fillStyle = '#ffffff';
-      enochCtx.fill();
+      off.beginPath();
+      off.arc(dotX, dotY, dotRadius * 4, 0, Math.PI * 2);
+      off.fillStyle = dotGlow;
+      off.fill();
+      off.beginPath();
+      off.arc(dotX, dotY, dotRadius, 0, Math.PI * 2);
+      off.fillStyle = '#ffffff';
+      off.fill();
     }
 
     const tahLabel = tahState.current ? `${tahState.current.month.name}` : '—';
     const tahLabelY = dotY + dotRadius + fontSize * 1.2;
-    enochCtx.font = `300 ${Math.max(9, baseR * 0.022)}px "DM Mono", monospace`;
-    enochCtx.fillStyle = 'rgba(160,185,210,0.5)';
-    enochCtx.textAlign = isMoonRightSide ? 'left' : 'right';
-    fillTextGlow(enochCtx, tahLabel, startX, tahLabelY, 'rgba(0,0,0,0.7)', 2);
+    off.font = `300 ${Math.max(9, baseR * 0.022)}px "DM Mono", monospace`;
+    off.fillStyle = 'rgba(160,185,210,0.5)';
+    off.textAlign = isMoonRightSide ? 'left' : 'right';
+    fillTextGlow(off, tahLabel, startX, tahLabelY, 'rgba(0,0,0,0.7)', 2);
   }
 
   // ── Labels des Éclipses ─────────────────────────────────────────
   eclipseMarkers.forEach(em => {
-    if (em.currentPercent === 0) return; 
+    if (em.currentPercent === 0) return;
 
     const isSolar = em.type === 'solar';
     const targetX = isSolar ? mx : drawMoonX;
     const targetY = isSolar ? my : drawMoonY;
     const angle = isSolar ? sunAngle : currentVisualAngle;
     const isRight = Math.cos(angle) > 0;
-    
+
     const lx = targetX + (isRight ? 15 : -15);
-    const ly = targetY - Math.max(16, baseR * 0.04); 
-    
-    enochCtx.save();
-    enochCtx.font = `500 ${Math.max(9, baseR * 0.024)}px "DM Mono", monospace`;
-    enochCtx.textAlign = isRight ? 'left' : 'right';
-    enochCtx.fillStyle = isSolar ? '#ffcc00' : '#ff7c73';
-    fillTextGlow(enochCtx, `${em.label} ${em.currentPercent}%`, lx, ly, 'rgba(0,0,0,0.8)', 3);
-    enochCtx.restore();
+    const ly = targetY - Math.max(16, baseR * 0.04);
+
+    off.save();
+    off.font = `500 ${Math.max(9, baseR * 0.024)}px "DM Mono", monospace`;
+    off.textAlign = isRight ? 'left' : 'right';
+    off.fillStyle = isSolar ? '#ffcc00' : '#ff7c73';
+    fillTextGlow(off, `${em.label} ${em.currentPercent}%`, lx, ly, 'rgba(0,0,0,0.8)', 3);
+    off.restore();
   });
 
   // ── Sun date label ──────────────────────────────────────────────
@@ -570,10 +607,10 @@ export function drawEnochWheel(state: AppState, enochCtx: CanvasRenderingContext
   const solarEclipseOffset = hasActiveSolarEclipse ? Math.max(22, baseR * 0.06) : 0;
   const baseLabelY = my + solarEclipseOffset;
 
-  enochCtx.fillStyle = isOutOfTime ? '#e05555' : '#fff';
-  enochCtx.font = `500 ${Math.max(12, baseR * 0.035)}px "DM Mono", monospace`;
+  off.fillStyle = isOutOfTime ? '#e05555' : '#fff';
+  off.font = `500 ${Math.max(12, baseR * 0.035)}px "DM Mono", monospace`;
   const isRightSide = Math.cos(sunAngle) > 0;
-  enochCtx.textAlign = isRightSide ? 'left' : 'right';
+  off.textAlign = isRightSide ? 'left' : 'right';
   const offsetX = isRightSide ? 15 : -15;
 
   const labelText = snap
@@ -582,22 +619,28 @@ export function drawEnochWheel(state: AppState, enochCtx: CanvasRenderingContext
       ? `Jour ${curDay - ENOCH_OUT_OF_TIME_START + 1} hors du temps`
       : `Jour ${dayInMonth} · Mois ${currentMonthIdx + 1} (Hénoch)`);
 
-  fillTextGlow(enochCtx, labelText, mx + offsetX, baseLabelY, 'rgba(0,0,0,0.8)', 3);
-  
+  fillTextGlow(off, labelText, mx + offsetX, baseLabelY, 'rgba(0,0,0,0.8)', 3);
+
   const hebrewLabel = snap
     ? snap.hebrew.labelText
     : (() => {
         const hb = computeHebrewFromJD(jdForLabel, 0, undefined, undefined, state.userTimezone);
         return `Jour ${hb.day} · Mois ${hb.month}`;
       })();
-  enochCtx.font = `400 ${Math.max(10, baseR * 0.028)}px "DM Mono", monospace`;
-  enochCtx.fillStyle = 'rgba(198, 198, 198, 0.8)';
-  fillTextGlow(enochCtx, hebrewLabel + ' (Hébraïque)', mx + offsetX, baseLabelY + Math.max(14, baseR * 0.038), 'rgba(0,0,0,0.8)', 3);
+  off.font = `400 ${Math.max(10, baseR * 0.028)}px "DM Mono", monospace`;
+  off.fillStyle = 'rgba(198, 198, 198, 0.8)';
+  fillTextGlow(off, hebrewLabel + ' (Hébraïque)', mx + offsetX, baseLabelY + Math.max(14, baseR * 0.038), 'rgba(0,0,0,0.8)', 3);
 
   const gregLabel = getHistoricalLabel(jdForLabel);
-  enochCtx.font = `300 ${Math.max(10, baseR * 0.026)}px "DM Mono", monospace`;
-  enochCtx.fillStyle = 'rgba(200,215,235,0.5)';
-  fillTextGlow(enochCtx, gregLabel, mx + offsetX, baseLabelY + Math.max(28, baseR * 0.072), 'rgba(0,0,0,0.7)', 3);
+  off.font = `300 ${Math.max(10, baseR * 0.026)}px "DM Mono", monospace`;
+  off.fillStyle = 'rgba(200,215,235,0.5)';
+  fillTextGlow(off, gregLabel, mx + offsetX, baseLabelY + Math.max(28, baseR * 0.072), 'rgba(0,0,0,0.7)', 3);
+
+  // Cache the rendered wheel and blit to main canvas
+  _enochCacheKey = cacheKey;
+  enochCtx.setTransform(1, 0, 0, 1, 0, 0);
+  enochCtx.clearRect(0, 0, enochCtx.canvas.width, enochCtx.canvas.height);
+  enochCtx.drawImage(_enochOffCanvas, 0, 0);
 }
 export function setupEnochUI(state: AppState, callbacks: EnochCallbacks): () => void {
   const showEnochCb = document.getElementById('show-enoch') as HTMLInputElement | null;

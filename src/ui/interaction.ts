@@ -56,6 +56,36 @@ export function setupInteraction(
   let _ttDecEl: HTMLElement | null | undefined;
   let _ttAzEl: HTMLElement | null | undefined;
 
+  // ── Input batching: coalesce pan/zoom deltas into one rAF ──
+  let _pendingPanX = 0;
+  let _pendingPanY = 0;
+  let _pendingZoomK: number | null = null;
+  let _inputRafId: number | null = null;
+
+  function flushInput(): void {
+    if (_pendingPanX !== 0 || _pendingPanY !== 0) {
+      state.panX += _pendingPanX;
+      state.panY += _pendingPanY;
+      clampPan();
+      _pendingPanX = 0;
+      _pendingPanY = 0;
+    }
+    if (_pendingZoomK !== null) {
+      state.zoomK = _pendingZoomK;
+      _pendingZoomK = null;
+      if (_zoomIndEl === undefined) _zoomIndEl = document.getElementById('zoomIndicator');
+      if (_zoomIndEl) _zoomIndEl.textContent = `\u00D7${state.zoomK.toFixed(1)}`;
+    }
+    state.needsRedraw = true;
+    _inputRafId = null;
+  }
+
+  function scheduleInputFlush(): void {
+    if (_inputRafId === null) {
+      _inputRafId = requestAnimationFrame(flushInput);
+    }
+  }
+
   function track(el: EventTarget, evt: string, fn: EventListener, opts?: AddEventListenerOptions): void {
     el.addEventListener(evt, fn, opts);
     listeners.push({ el, evt, fn, opts });
@@ -66,7 +96,7 @@ export function setupInteraction(
     state.W = canvas.clientWidth || window.innerWidth;
     state.H = canvas.clientHeight || window.innerHeight;
     state.viewScale = Math.min(1, state.W / 550);
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = state.W * dpr;
     canvas.height = state.H * dpr;
     // Resize secondary canvases if present
@@ -124,11 +154,10 @@ let _lastAppliedPanY = 0;
 
 const handleMouseMove = (e: MouseEvent): void => {
   if (isDragging && lastMouse) {
-    state.panX += e.clientX - lastMouse[0];
-    state.panY += e.clientY - lastMouse[1];
-    clampPan();
+    _pendingPanX += e.clientX - lastMouse[0];
+    _pendingPanY += e.clientY - lastMouse[1];
     lastMouse = [e.clientX, e.clientY];
-    state.needsRedraw = true;
+    scheduleInputFlush();
   }
 
   // Only update projection if viewport state actually changed
@@ -285,21 +314,18 @@ const handleMouseUp = (e: MouseEvent): void => {
     }
 
     if (e.touches.length === 1 && isDragging && lastMouse) {
-      state.panX += e.touches[0].clientX - lastMouse[0];
-      state.panY += e.touches[0].clientY - lastMouse[1];
-      clampPan();
+      _pendingPanX += e.touches[0].clientX - lastMouse[0];
+      _pendingPanY += e.touches[0].clientY - lastMouse[1];
       lastMouse = [e.touches[0].clientX, e.touches[0].clientY];
-      state.needsRedraw = true;
+      scheduleInputFlush();
     } else if (e.touches.length === 2 && lastTouchDist) {
       const d = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
-      state.zoomK = Math.max(ZOOM.MIN, Math.min(ZOOM.MAX, state.zoomK * d / lastTouchDist));
+      _pendingZoomK = Math.max(ZOOM.MIN, Math.min(ZOOM.MAX, state.zoomK * d / lastTouchDist));
       lastTouchDist = d;
-      if (_zoomIndEl === undefined) _zoomIndEl = document.getElementById('zoomIndicator');
-      if (_zoomIndEl) _zoomIndEl.textContent = `\u00D7${state.zoomK.toFixed(1)}`;
-      state.needsRedraw = true;
+      scheduleInputFlush();
     }
     e.preventDefault();
   };

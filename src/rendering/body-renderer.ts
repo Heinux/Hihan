@@ -2,6 +2,7 @@ import * as Astronomy from 'astronomy-engine';
 import type { GeoProjection } from 'd3';
 import { normLon, lerpAngle } from '@/core/astronomy';
 import { zoomLabelScale } from '@/core/constants';
+import { getGlowSprite, blitGlow } from '@/rendering/glow-sprite-cache';
 import { placeLabel } from '@/rendering/renderer';
 import type { LabelBox } from '@/rendering/renderer';
 import type { CelestialBody } from '@/core/constants';
@@ -146,8 +147,7 @@ export function renderBodies(
   bodyPositions.forEach(({ body, px, py }) => {
     const gScale = vs * z;
     const r = body.radius * z;
-    // Outer glow halo — bell-curve glow approximating shadowBlur
-    // Peak brightness at core edge, long soft tail beyond. Core dot drawn on top.
+    // Outer glow halo — pre-rendered sprite replaces per-frame createRadialGradient
     const blurSigma = body.glow * gScale / 3;
     const totalR = r + blurSigma * 5;
     const ce = r / totalR; // core-edge ratio
@@ -155,18 +155,16 @@ export function renderBodies(
     const cr = parseInt(body.color.slice(1, 3), 16);
     const cg = parseInt(body.color.slice(3, 5), 16);
     const cb = parseInt(body.color.slice(5, 7), 16);
-    const grad = ctx.createRadialGradient(px, py, 0, px, py, totalR);
-    grad.addColorStop(0, `rgba(${cr},${cg},${cb},0.2)`);
-    grad.addColorStop(ce, `rgba(${cr},${cg},${cb},0.75)`);
-    grad.addColorStop(ce + (1 - ce) * 0.12, `rgba(${cr},${cg},${cb},0.35)`);
-    grad.addColorStop(ce + (1 - ce) * 0.30, `rgba(${cr},${cg},${cb},0.12)`);
-    grad.addColorStop(ce + (1 - ce) * 0.55, `rgba(${cr},${cg},${cb},0.03)`);
-    grad.addColorStop(ce + (1 - ce) * 0.8, `rgba(${cr},${cg},${cb},0.005)`);
-    grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
-    ctx.beginPath();
-    ctx.arc(px, py, totalR, 0, Math.PI * 2);
-    ctx.fillStyle = grad;
-    ctx.fill();
+    const bodySprite = getGlowSprite(totalR, [
+      { offset: 0, color: `rgba(${cr},${cg},${cb},0.2)` },
+      { offset: ce, color: `rgba(${cr},${cg},${cb},0.75)` },
+      { offset: ce + (1 - ce) * 0.12, color: `rgba(${cr},${cg},${cb},0.35)` },
+      { offset: ce + (1 - ce) * 0.30, color: `rgba(${cr},${cg},${cb},0.12)` },
+      { offset: ce + (1 - ce) * 0.55, color: `rgba(${cr},${cg},${cb},0.03)` },
+      { offset: ce + (1 - ce) * 0.8, color: `rgba(${cr},${cg},${cb},0.005)` },
+      { offset: 1, color: `rgba(${cr},${cg},${cb},0)` },
+    ], `body:${body.id}`);
+    blitGlow(ctx, bodySprite, px, py);
 
     // Body rendering (no shadowBlur)
     if (body.id === 'Moon') {

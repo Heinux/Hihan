@@ -208,16 +208,7 @@ export function jdToLocalDateString(jd: number, tz?: string): string {
 
   try {
     // Use Intl API to convert to the correct timezone
-    const parts = new Intl.DateTimeFormat('fr-FR', {
-      timeZone: userTz,
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      era: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(d);
+    const parts = getLocalDateFmt(userTz).formatToParts(d);
 
     const p: Record<string, string> = {};
     parts.forEach(({ type, value }) => { p[type] = value; });
@@ -247,9 +238,21 @@ export function jdToLocalDateString(jd: number, tz?: string): string {
  * @param tz - IANA timezone identifier
  * @returns Month number (1-12)
  */
+// Cached Intl.DateTimeFormat for getMonthInTz
+let _monthFmt: Intl.DateTimeFormat | null = null;
+let _monthFmtKey = '';
+
+function getMonthFmt(tz: string): Intl.DateTimeFormat {
+  if (tz !== _monthFmtKey || !_monthFmt) {
+    _monthFmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, month: 'numeric' });
+    _monthFmtKey = tz;
+  }
+  return _monthFmt;
+}
+
 export function getMonthInTz(d: Date, tz: string): number {
   try {
-    const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, month: 'numeric' }).formatToParts(d);
+    const parts = getMonthFmt(tz).formatToParts(d);
     const monthPart = parts.find(p => p.type === 'month');
     return monthPart ? parseInt(monthPart.value) : d.getUTCMonth() + 1;
   } catch {
@@ -267,13 +270,46 @@ export function getMonthInTz(d: Date, tz: string): number {
  * @param tz - IANA timezone identifier
  * @returns Offset in minutes
  */
+// Cached Intl.DateTimeFormat for jdToLocalDateString (fr-FR, same options as time-service)
+let _localDateFmtTs: Intl.DateTimeFormat | null = null;
+let _localDateFmtTsKey = '';
+
+function getLocalDateFmt(tz: string): Intl.DateTimeFormat {
+  if (tz !== _localDateFmtTsKey || !_localDateFmtTs) {
+    _localDateFmtTs = new Intl.DateTimeFormat('fr-FR', {
+      timeZone: tz,
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      era: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    _localDateFmtTsKey = tz;
+  }
+  return _localDateFmtTs;
+}
+
+// Cached Intl.DateTimeFormat for getTzOffsetMinutes — avoids 1-5ms ICU lookup per call
+let _tzOffsetFmt: Intl.DateTimeFormat | null = null;
+let _tzOffsetKey = '';
+
+function getTzOffsetFmt(tz: string): Intl.DateTimeFormat {
+  if (tz !== _tzOffsetKey || !_tzOffsetFmt) {
+    _tzOffsetFmt = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    _tzOffsetKey = tz;
+  }
+  return _tzOffsetFmt;
+}
+
 export function getTzOffsetMinutes(d: Date, tz: string): number {
   if (isNaN(d.getTime())) return 0;
   try {
     const utcMs = d.getTime();
 
-    const pTz = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour12: false,
-      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(d);
+    const pTz = getTzOffsetFmt(tz).formatToParts(d);
     const pt: Record<string, string> = {};
     pTz.forEach(({ type, value }) => { pt[type] = value; });
 
@@ -368,7 +404,7 @@ export function advanceTime(state: AppState): void {
     else if (state.timeStepUnit === 'month') ms = state.timeStepVal * AVG_MONTH_DAYS * MS_PER_DAY;
     else if (state.timeStepUnit === 'year') ms = state.timeStepVal * DAYS_PER_YEAR * MS_PER_DAY;
     else ms = 0;
-    state.currentTime = new Date(state.currentTime.getTime() + ms);
+    state.currentTime.setTime(state.currentTime.getTime() + ms);
   }
 }
 

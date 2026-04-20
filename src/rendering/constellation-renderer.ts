@@ -2,6 +2,7 @@ import type { GeoProjection } from 'd3';
 import type { TypedGeoPath } from '@/rendering/geo-path';
 import { precessJ2000ToDate, normLon } from '@/core/astronomy';
 import { zoomLabelScale } from '@/core/constants';
+import { getGlowSprite, blitGlow } from '@/rendering/glow-sprite-cache';
 import { placeLabel } from '@/rendering/renderer';
 import type { LabelBox } from '@/rendering/renderer';
 import { NAV_STARS } from '@/data/nav-stars';
@@ -128,23 +129,25 @@ export function drawNavStars(
     const totalGlowR = r + blurSigma * 4;
     const ce = r / totalGlowR;
 
-    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, totalGlowR);
-    if (star.nav) {
-      grad.addColorStop(0, 'rgba(160,200,255,0.12)');
-      grad.addColorStop(ce, 'rgba(200,225,255,0.35)');
-      grad.addColorStop(ce + (1 - ce) * 0.25, 'rgba(180,215,255,0.12)');
-      grad.addColorStop(ce + (1 - ce) * 0.55, 'rgba(165,205,255,0.03)');
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-    } else {
-      grad.addColorStop(0, 'rgba(160,190,255,0.06)');
-      grad.addColorStop(ce, 'rgba(180,205,255,0.18)');
-      grad.addColorStop(ce + (1 - ce) * 0.3, 'rgba(170,200,255,0.05)');
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-    }
-    ctx.beginPath();
-    ctx.arc(sx, sy, totalGlowR, 0, Math.PI * 2);
-    ctx.fillStyle = grad;
-    ctx.fill();
+    // Pre-rendered glow sprite (avoids per-frame createRadialGradient)
+    const spriteKey = star.nav ? 'nav' : 'non-nav';
+    const sprite = getGlowSprite(totalGlowR,
+      star.nav
+        ? [
+            { offset: 0, color: 'rgba(160,200,255,0.12)' },
+            { offset: ce, color: 'rgba(200,225,255,0.35)' },
+            { offset: ce + (1 - ce) * 0.25, color: 'rgba(180,215,255,0.12)' },
+            { offset: ce + (1 - ce) * 0.55, color: 'rgba(165,205,255,0.03)' },
+            { offset: 1, color: 'rgba(0,0,0,0)' },
+          ]
+        : [
+            { offset: 0, color: 'rgba(160,190,255,0.06)' },
+            { offset: ce, color: 'rgba(180,205,255,0.18)' },
+            { offset: ce + (1 - ce) * 0.3, color: 'rgba(170,200,255,0.05)' },
+            { offset: 1, color: 'rgba(0,0,0,0)' },
+          ],
+      spriteKey);
+    blitGlow(ctx, sprite, sx, sy);
 
     // Core dot — brighter center to compensate for glow replacing shadowBlur
     ctx.beginPath();
@@ -225,16 +228,14 @@ export function drawCities(
       ctx.fillStyle = 'rgba(255,200,110,0.8)';
       ctx.fillText(city.symbol || '\u25C6', cx, cy);
     } else {
-      // Glow via radial gradient (replaces shadowBlur)
+      // Glow via pre-rendered sprite (replaces per-frame createRadialGradient)
       const cityGlowR = (2 * vs * vs + 4) * z;
-      const cityGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, cityGlowR);
-      cityGrad.addColorStop(0, 'rgba(255,190,90,0.4)');
-      cityGrad.addColorStop(0.5, 'rgba(255,190,90,0.1)');
-      cityGrad.addColorStop(1, 'rgba(255,190,90,0)');
-      ctx.beginPath();
-      ctx.arc(cx, cy, cityGlowR, 0, Math.PI * 2);
-      ctx.fillStyle = cityGrad;
-      ctx.fill();
+      const citySprite = getGlowSprite(cityGlowR, [
+        { offset: 0, color: 'rgba(255,190,90,0.4)' },
+        { offset: 0.5, color: 'rgba(255,190,90,0.1)' },
+        { offset: 1, color: 'rgba(255,190,90,0)' },
+      ], 'city');
+      blitGlow(ctx, citySprite, cx, cy);
       // Core dot
       ctx.beginPath();
       ctx.arc(cx, cy, 2 * z, 0, Math.PI * 2);

@@ -124,7 +124,11 @@ export function precessJ2000ToDate(
     if (cached) return cached;
 
     const result = _precessRaw(ra_deg, dec_deg, angles);
-    if (_precessCache.size >= PRECESS_CACHE_MAX) _precessCache.clear();
+    if (_precessCache.size >= PRECESS_CACHE_MAX) {
+      // Evict oldest entry (Map preserves insertion order) instead of clearing all
+      const oldest = _precessCache.keys().next().value;
+      if (oldest !== undefined) _precessCache.delete(oldest);
+    }
     _precessCache.set(cacheKey, result);
     return result;
   }
@@ -190,6 +194,22 @@ export function eclToEquatorial(lambdaDeg: number, betaDeg: number, epsRad: numb
   let raRad: number = Math.atan2(ye, x);
   if (raRad < 0) raRad += 2 * Math.PI;
   return { ra: raRad * 12 / Math.PI, dec: Math.asin(ze) * 180 / Math.PI };
+}
+
+// Cache the 181-point ecliptic path — epsRad changes at most once per frame
+let _eclPathKey = NaN;
+let _eclPathCache: { ra: number; dec: number }[] | null = null;
+
+export function getEclipticPath(epsRad: number): { ra: number; dec: number }[] {
+  const key = Math.round(epsRad * 1e10);
+  if (key === _eclPathKey && _eclPathCache) return _eclPathCache;
+  const path: { ra: number; dec: number }[] = [];
+  for (let i = 0; i <= 360; i += 2) {
+    path.push(eclToEquatorial(i, 0, epsRad));
+  }
+  _eclPathKey = key;
+  _eclPathCache = path;
+  return path;
 }
 
 /**

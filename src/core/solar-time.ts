@@ -131,14 +131,26 @@ export function findSolarNoon(
 /**
  * Format a JS Date as local civil time "HHh MM" using the given timezone.
  */
-export function formatCivilTimeInTz(date: Date, tz: string): string {
-  try {
-    const parts = new Intl.DateTimeFormat('fr-FR', {
+// Cached Intl.DateTimeFormat for formatCivilTimeInTz
+let _civilTimeFmt: Intl.DateTimeFormat | null = null;
+let _civilTimeFmtKey = '';
+
+function getCivilTimeFmt(tz: string): Intl.DateTimeFormat {
+  if (tz !== _civilTimeFmtKey || !_civilTimeFmt) {
+    _civilTimeFmt = new Intl.DateTimeFormat('fr-FR', {
       timeZone: tz,
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
-    }).formatToParts(date);
+    });
+    _civilTimeFmtKey = tz;
+  }
+  return _civilTimeFmt;
+}
+
+export function formatCivilTimeInTz(date: Date, tz: string): string {
+  try {
+    const parts = getCivilTimeFmt(tz).formatToParts(date);
     const h = parts.find(p => p.type === 'hour')?.value ?? '12';
     const m = parts.find(p => p.type === 'minute')?.value ?? '00';
     return `${h}h ${m}`;

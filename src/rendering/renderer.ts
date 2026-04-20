@@ -1,7 +1,8 @@
 import { geoGraticule, geoCircle } from 'd3-geo';
 import type { GeoProjection } from 'd3';
 import type { TypedGeoPath } from '@/rendering/geo-path';
-import { normLon, eclToEquatorial } from '@/core/astronomy';
+import { normLon, eclToEquatorial, getEclipticPath } from '@/core/astronomy';
+import { getGlowSprite, blitGlow } from '@/rendering/glow-sprite-cache';
 import { SEASON_DEFS, EVENT_LABELS_N, EVENT_LABELS_S, zoomLabelScale } from '@/core/constants';
 
 type EventKey = 'vernal' | 'summer' | 'autumnal' | 'winter';
@@ -130,16 +131,14 @@ export class CanvasRenderer {
   drawBackgroundLayer(worldData: GeoJSON.GeoJsonObject | null, state: ViewportState): void {
     const vs = state.viewScale ?? 1;
     const Wv = state.W / vs, Hv = state.H / vs;
-    const dpr = window.devicePixelRatio || 1;
-    const key = `${this.#projection.scale()}:${this.#projection.translate()}:${this.#projection.rotate()}`;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // Cache key includes projection AND viewport (offscreen has viewport baked in)
+    const key = `${this.#projection.scale()}:${this.#projection.translate()}:${this.#projection.rotate()}:${state.panX}:${state.panY}:${state.zoomK}`;
 
     if (key === this.#bgCacheKey && this.#bgCanvas && this.#bgCacheDpr === dpr) {
-      // Cache hit: blit offscreen canvas
-      this.#ctx.drawImage(this.#bgCanvas, 0, 0);
       return;
     }
 
-    // Cache miss: render to offscreen canvas
     if (!this.#bgCanvas) {
       this.#bgCanvas = document.createElement('canvas');
       this.#bgCtx = this.#bgCanvas.getContext('2d')!;
@@ -153,7 +152,7 @@ export class CanvasRenderer {
     const off = this.#bgCtx!;
     off.setTransform(dpr * vs, 0, 0, dpr * vs, 0, 0);
     off.clearRect(0, 0, Wv, Hv);
-    // Apply same viewport transform
+    // Apply same viewport transform as main canvas
     off.save();
     off.translate(Wv / 2 + state.panX / vs, Hv / 2 + state.panY / vs);
     off.scale(state.zoomK, state.zoomK);
@@ -192,9 +191,13 @@ export class CanvasRenderer {
 
     off.restore();
     this.#bgCacheKey = key;
+  }
 
-    // Blit to main canvas
-    this.#ctx.drawImage(this.#bgCanvas, 0, 0);
+  /** Blit cached background BEFORE applyViewportTransform (offscreen has viewport baked in). */
+  blitBackground(): void {
+    if (this.#bgCanvas) {
+      this.#ctx.drawImage(this.#bgCanvas, 0, 0);
+    }
   }
 
   drawBackground(W: number, H: number): void {
@@ -231,11 +234,9 @@ export class CanvasRenderer {
   }
 
   drawEcliptic(epsRad: number, gmst: number): void {
-    const eclPts: [number, number][] = [];
-    for (let i = 0; i <= 360; i += 2) {
-      const { ra, dec } = eclToEquatorial(i, 0, epsRad);
-      eclPts.push([normLon((ra - gmst) * 15), dec]);
-    }
+    const eclPts: [number, number][] = getEclipticPath(epsRad).map(
+      ({ ra, dec }) => [normLon((ra - gmst) * 15), dec]
+    );
     this.#ctx.beginPath();
     this.#pathGen({ type: "LineString", coordinates: eclPts });
     this.#ctx.strokeStyle = 'rgba(200,215,235,0.2)';
@@ -302,23 +303,21 @@ export class CanvasRenderer {
       const [sx, sy] = coords;
       const mr = def.markerR * z;
 
-      // Outer glow
-      const grad = this.#ctx.createRadialGradient(sx, sy, 0, sx, sy, mr * 3.5);
-      grad.addColorStop(0, lbl.color.replace(/[\d.]+\)$/, '0.4)'));
-      grad.addColorStop(1, lbl.color.replace(/[\d.]+\)$/, '0)'));
-      this.#ctx.beginPath();
-      this.#ctx.arc(sx, sy, mr * 3.5, 0, Math.PI * 2);
-      this.#ctx.fillStyle = grad;
-      this.#ctx.fill();
+      // Outer glow — pre-rendered sprite
+      const outerGlowR = mr * 3.5;
+      const outerSprite = getGlowSprite(outerGlowR, [
+        { offset: 0, color: lbl.color.replace(/[\d.]+\)$/, '0.4)') },
+        { offset: 1, color: lbl.color.replace(/[\d.]+\)$/, '0)') },
+      ], `season-outer:${def.key}`);
+      blitGlow(this.#ctx, outerSprite, sx, sy);
 
-      // Rotated diamond marker with glow (radial gradient replaces shadowBlur)
-      const diamondGlow = this.#ctx.createRadialGradient(sx, sy, 0, sx, sy, mr * 1.5);
-      diamondGlow.addColorStop(0, lbl.color.replace(/[\d.]+\)$/, '0.35)'));
-      diamondGlow.addColorStop(1, lbl.color.replace(/[\d.]+\)$/, '0)'));
-      this.#ctx.beginPath();
-      this.#ctx.arc(sx, sy, mr * 1.5, 0, Math.PI * 2);
-      this.#ctx.fillStyle = diamondGlow;
-      this.#ctx.fill();
+      // Rotated diamond marker with glow — pre-rendered sprite
+      const diamondGlowR = mr * 1.5;
+      const diamondSprite = getGlowSprite(diamondGlowR, [
+        { offset: 0, color: lbl.color.replace(/[\d.]+\)$/, '0.35)') },
+        { offset: 1, color: lbl.color.replace(/[\d.]+\)$/, '0)') },
+      ], `season-diamond:${def.key}`);
+      blitGlow(this.#ctx, diamondSprite, sx, sy);
 
       this.#ctx.save();
       this.#ctx.translate(sx, sy);

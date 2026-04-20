@@ -35,7 +35,7 @@ export class TideUIManager {
 
   #drawCurveIfOpen(): void {
     if (!this.#tideCurveCanvas || !this.#tideCurveCtx || !this.#cachedTideState) return;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const rect = this.#tideCurveCanvas.getBoundingClientRect();
     const cw = Math.round(rect.width);
     if (cw <= 0) return;

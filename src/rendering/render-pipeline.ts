@@ -63,7 +63,6 @@ export interface FrameContext {
   astroTimeObj: Astronomy.AstroTime | null;
 }
 
-import { normLon, eclToEquatorial } from '@/core/astronomy';
 import { renderBodies } from '@/rendering/body-renderer';
 import { drawConstellations, drawNavStars, drawCities } from '@/rendering/constellation-renderer';
 import { drawComets } from '@/rendering/comet-renderer';
@@ -71,10 +70,10 @@ import { tideLayer } from '@/rendering/tide-layer';
 import { pouLayer, ruaLayer } from '@/rendering/rua-pou-layer';
 import { windRoseLayer } from '@/rendering/wind-rose-layer';
 import { windParticlesLayer } from '@/rendering/wind-particles-layer';
-import { ZODIAC_SIGNS, J2000_EPOCH, zoomLabelScale } from '@/core/constants';
+import { zoomLabelScale } from '@/core/constants';
 import { CITIES, SITE_MAP } from '@/data/cities';
 
-// 1. Background — drawBackground + drawGraticule + drawWorld
+// 1. Background — sphere fill + graticule + world map
 export const backgroundLayer: RenderLayer = {
   name: 'background',
   enabled: () => true,
@@ -139,28 +138,11 @@ export const constellationsLayer: RenderLayer = {
   },
 };
 
-// 7. Zodiac signs symbols
+// 7. Zodiac signs symbols — placeholder (rendering not yet implemented)
 export const zodiacSignsLayer: RenderLayer = {
   name: 'zodiac-signs',
   enabled: (state) => state.isVisible('zodiac'),
-  render(ctx, state, deps) {
-    const frame: FrameContext = deps.frame;
-    const z = zoomLabelScale(state.zoomK);
-    const ayanamsa = 23.853 + (frame.jd - J2000_EPOCH) / 365.25 * (50.29 / 3600);
-    ZODIAC_SIGNS.forEach(zs => {
-      const siderealLon = zs.eclLon - ayanamsa;
-      const { ra, dec } = eclToEquatorial(siderealLon, 0, frame.epsRad);
-      const coords = deps.projection([normLon((ra - frame.gmst) * 15), dec]);
-      if (coords) {
-        ctx.save();
-        ctx.font = `${16 * z}px serif`;
-        ctx.fillStyle = 'rgba(210,220,235,0.55)';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.restore();
-      }
-    });
-  },
+  render() {},
 };
 
 // 8. Celestial bodies — renderBodies

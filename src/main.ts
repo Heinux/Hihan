@@ -195,7 +195,7 @@ const { updateToggleArrows, addCloseButtons } = setupPanelToggles(state);
 state.W = canvas.clientWidth || window.innerWidth;
 state.H = canvas.clientHeight || window.innerHeight;
 state.viewScale = Math.min(1, state.W / MOBILE_VIEWPORT_THRESHOLD);
-const dpr = window.devicePixelRatio || 1;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
 canvas.width = state.W * dpr;
 canvas.height = state.H * dpr;
 enochCanvas.width = state.W * dpr;
@@ -328,7 +328,7 @@ function draw(): void {
   }
 
   const ctx = renderer.ctx;
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const vs = state.viewScale;
   ctx.setTransform(dpr * vs, 0, 0, dpr * vs, 0, 0);
   ctx.clearRect(0, 0, state.W / vs, state.H / vs);

@@ -13,6 +13,9 @@ export class DSOManager {
   #searchQuery: string;
   #highlight: string | null;
   #canvasObjects: CanvasObject[];
+  // Per-frame precession cache — shared between drawPaths and draw
+  #precessedT: number = NaN;
+  #precessedMap: Map<string, { ra_deg: number; dec_deg: number }> = new Map();
 
   constructor(
     state: AppState,
@@ -36,15 +39,30 @@ export class DSOManager {
   get groupState(): Record<string, boolean> { return this.#groupState; }
   get dsoGroups(): readonly DSOGroup[] { return this.#dsoGroups; }
 
+  /** Compute precessed positions once per frame, shared between drawPaths and draw. */
+  #ensurePrecessed(T: number): void {
+    const tKey = Math.round(T * 1e8);
+    if (tKey === this.#precessedT && this.#precessedMap.size > 0) return;
+    this.#precessedT = tKey;
+    this.#precessedMap.clear();
+    for (const g of this.#dsoGroups) {
+      for (const obj of g.objects) {
+        const { ra_deg, dec_deg } = precessJ2000ToDate(obj.ra * 15, obj.dec, T);
+        this.#precessedMap.set(obj.name, { ra_deg, dec_deg });
+      }
+    }
+  }
+
   drawPaths(ctx: CanvasRenderingContext2D, gmst: number, T: number): void {
+    this.#ensurePrecessed(T);
     this.#dsoGroups.forEach(g => {
       if (!this.#groupState[g.id] || !g.showPath) return;
       if (g.objects.length < 2) return;
       const sorted = [...g.objects].sort((a, b) => a.ra - b.ra);
       const pts = sorted.map(obj => {
-        const { ra_deg, dec_deg } = precessJ2000ToDate(obj.ra * 15, obj.dec, T);
-        const lon = this.#normLon((ra_deg / 15 - gmst) * 15);
-        return [lon, dec_deg] as [number, number];
+        const p = this.#precessedMap.get(obj.name)!;
+        const lon = this.#normLon((p.ra_deg / 15 - gmst) * 15);
+        return [lon, p.dec_deg] as [number, number];
       });
       ctx.save();
       ctx.strokeStyle = g.color + '60';
@@ -69,16 +87,17 @@ export class DSOManager {
   draw(ctx: CanvasRenderingContext2D, gmst: number, T: number): void {
     const showAny = this.#dsoGroups.some(g => this.#groupState[g.id]);
     if (!showAny) return;
+    this.#ensurePrecessed(T);
     const vs = this.#state.viewScale ?? 1;
     const z = zoomLabelScale(this.#state.zoomK ?? 1);
-    this.#canvasObjects = [];
+    this.#canvasObjects.length = 0;
 
     this.#dsoGroups.forEach(g => {
       if (!this.#groupState[g.id]) return;
       g.objects.forEach(obj => {
-        const { ra_deg, dec_deg } = precessJ2000ToDate(obj.ra * 15, obj.dec, T);
-        const lon = this.#normLon((ra_deg / 15 - gmst) * 15);
-        const coords = this.#projection([lon, dec_deg]);
+        const p = this.#precessedMap.get(obj.name)!;
+        const lon = this.#normLon((p.ra_deg / 15 - gmst) * 15);
+        const coords = this.#projection([lon, p.dec_deg]);
         if (!coords) return;
         const [sx, sy] = coords;
         this.#canvasObjects.push({ obj, group: g, px: sx, py: sy });

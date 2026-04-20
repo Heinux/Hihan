@@ -35,6 +35,27 @@ import type { CalendarSnapshot, GregorianDate } from '@/core/types';
 export type { CalendarSnapshot } from '@/core/types';
 export type { GregorianDate } from '@/core/types';
 
+// Cached Intl.DateTimeFormat for local date string — avoids 1-5ms ICU lookup per call
+let _localDateFmt: Intl.DateTimeFormat | null = null;
+let _localDateFmtKey = '';
+
+function getLocalDateFmt(tz: string): Intl.DateTimeFormat {
+  if (tz !== _localDateFmtKey || !_localDateFmt) {
+    _localDateFmt = new Intl.DateTimeFormat('fr-FR', {
+      timeZone: tz,
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      era: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    _localDateFmtKey = tz;
+  }
+  return _localDateFmt;
+}
+
 interface CacheEntry {
   jd: number;
   tz: string;
@@ -144,16 +165,7 @@ export class TimeService {
     } else if (inRange) {
       try {
         const d = new Date(ms);
-        const parts = new Intl.DateTimeFormat('fr-FR', {
-          timeZone: userTz,
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric',
-          era: 'short',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        }).formatToParts(d);
+        const parts = getLocalDateFmt(userTz).formatToParts(d);
         const p: Record<string, string> = {};
         parts.forEach(({ type, value }) => { p[type] = value; });
         const localMonth = getMonthInTz(d, userTz);

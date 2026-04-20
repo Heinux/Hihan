@@ -83,7 +83,14 @@ export class AlertSystem {
     this.checkAlerts(gmst, T);
   }
 
+  #lastAlertCheckSec = 0;
+
   #checkDSOTransits(_gmst: number, _T: number): AlertEntry[] {
+    // Throttle to once per second — transits change on minute scales, not per-frame
+    const nowSec = Math.floor(performance.now() / 1000);
+    if (nowSec === this.#lastAlertCheckSec) return [];
+    this.#lastAlertCheckSec = nowSec;
+
     if (this.#cachedAlertPrecEl === undefined) this.#cachedAlertPrecEl = document.getElementById('alertPrecision') as HTMLInputElement | null;
     if (this.#cachedAlertSiteEl === undefined) this.#cachedAlertSiteEl = document.getElementById('alertSite') as HTMLSelectElement | null;
     const precision = parseFloat(this.#cachedAlertPrecEl?.value ?? '') || 0.5;

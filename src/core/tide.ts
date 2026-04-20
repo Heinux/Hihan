@@ -204,17 +204,29 @@ function gmstHoursFromTT(tt: number): number {
   return gmst / 15;
 }
 
+// Cached Intl.DateTimeFormat for formatCivilTimeFromJD
+let _tideCivilFmt: Intl.DateTimeFormat | null = null;
+let _tideCivilFmtKey = '';
+
+function getTideCivilFmt(tz: string): Intl.DateTimeFormat {
+  if (tz !== _tideCivilFmtKey || !_tideCivilFmt) {
+    _tideCivilFmt = new Intl.DateTimeFormat('fr-FR', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    _tideCivilFmtKey = tz;
+  }
+  return _tideCivilFmt;
+}
+
 function formatCivilTimeFromJD(jd: number, _tzOffsetMinutes: number, tz: string): string {
   const ms = (jd - 2440587.5) * 86400000;
   const d = new Date(ms);
   if (isNaN(d.getTime())) return '--h --';
   try {
-    const parts = new Intl.DateTimeFormat('fr-FR', {
-      timeZone: tz,
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(d);
+    const parts = getTideCivilFmt(tz).formatToParts(d);
     const h = parts.find(p => p.type === 'hour')?.value ?? '--';
     const m = parts.find(p => p.type === 'minute')?.value ?? '--';
     return `${h}h ${m}`;
