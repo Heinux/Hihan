@@ -156,15 +156,17 @@ export class WindManager {
 
     const ms = (jd - JULIAN_UNIX_EPOCH) * MS_PER_DAY;
     const d = new Date(ms);
-    const now = new Date();
-    const twoWeeksAgo = new Date(now.getTime() - 15 * 86400000);
-    if (d.getTime() < twoWeeksAgo.getTime()) {
+    // No GFS data before 2004-03-01 (earliest NCEI archive)
+    const minDate = new Date(Date.UTC(2004, 2, 1));
+    if (d.getTime() < minDate.getTime()) {
       this.#unavailable = true;
       this.#source = 'Indisponible';
       state.windGrid = null;
       windSystem.reset();
       return;
     }
+    // Only block dates beyond the GFS forecast range (~16 days from now).
+    const now = new Date();
     const maxForecast = new Date(now.getTime() + 16 * 86400000);
     if (d.getTime() > maxForecast.getTime()) {
       this.#unavailable = true;

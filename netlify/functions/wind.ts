@@ -1,9 +1,12 @@
 import type { Handler } from '@netlify/functions';
 
 // ── GFS Wind Data Proxy ─────────────────────────────────────────────
-// Fetches 10m wind (u,v) from NOAA NOMADS GRIB2 filter service,
-// decodes the grid data, re-encodes as the app's binary format.
-// Falls back gracefully if NOMADS is unavailable.
+// Fetches 10m wind (u,v) from multiple NOAA data sources:
+//   1. NOMADS GRIB2 filter — recent data (~15-day rolling window)
+//   2. AWS S3 Open Data (noaa-gfs-bdp-pds) — historical 2021+, uses
+//      GRIB2 idx + HTTP Range requests for efficient partial downloads
+//   3. NCEI direct HTTPS — pre-2021 archive (Grid 4, 0.5° analysis)
+//   4. NCEI THREDDS OPeNDAP — last resort (currently broken, 403 errors)
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -233,12 +236,10 @@ function decodeGribMessage(buf: ArrayBuffer, msgOffset: number, msgLen: number):
     if (diffOrder === 2) {
       const h1 = firstValues[0];
       const h2 = firstValues[1];
-      // g = first-differenced field: g[0]=f[0]=h1, g[1]=f[1]-f[0]=h2-h1
       const g = new Float64Array(nDataPts);
       g[0] = h1;
       g[1] = h2 - h1;
       for (let i = 2; i < nDataPts; i++) g[i] = unpacked[i] + g[i - 1];
-      // f = original field: f[0]=g[0], f[i]=g[i]+f[i-1]
       values[0] = h1;
       for (let i = 1; i < nDataPts; i++) values[i] = g[i] + values[i - 1];
     } else if (diffOrder === 1) {
@@ -326,12 +327,10 @@ function findBestRun(targetDate: string, targetHour?: string): { runDate: string
   const DELAY_HOURS = 4; // data availability lag
 
   if (targetDate === 'latest') {
-    // Use current UTC time, find most recent available cycle
     const now = new Date();
     return findRunForTime(now, CYCLES, DELAY_HOURS);
   }
 
-  // Parse target date + hour into a Date
   const hour = targetHour ? parseInt(targetHour, 10) : 0;
   if (isNaN(hour)) return findRunForTime(new Date(), CYCLES, DELAY_HOURS);
 
@@ -349,20 +348,17 @@ function findRunForTime(
   const now = new Date();
   const targetEpoch = target.getTime();
 
-  // Find the latest available run — used for future targets and as fallback
   const latestRun = findLatestAvailableRun(cycles, delayHours);
   const latestDate = `${latestRun.runDate.slice(0, 4)}-${latestRun.runDate.slice(4, 6)}-${latestRun.runDate.slice(6, 8)}`;
   const latestRunTime = new Date(`${latestDate}T${latestRun.cycle.padStart(2, '0')}:00:00Z`);
   const fhourFromLatest = Math.round((targetEpoch - latestRunTime.getTime()) / 3600000);
 
-  // For future targets: use the latest available run if within forecast range
   if (fhourFromLatest >= 0) {
-    if (fhourFromLatest > 384) return null; // too far ahead for any forecast
+    if (fhourFromLatest > 384) return null;
     const fhour3 = Math.round(fhourFromLatest / 3) * 3;
     return { ...latestRun, fhour: fhour3 };
   }
 
-  // For past targets: find a run near the target time
   const targetDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth(), target.getUTCDate()));
 
   for (let dayOffset = 0; dayOffset <= 2; dayOffset++) {
@@ -378,7 +374,6 @@ function findRunForTime(
       if (fhour > 384) continue;
       const fhour3 = Math.round(fhour / 3) * 3;
 
-      // Verify this run should be available (run + delay <= now)
       const dataAvailTime = runTime.getTime() + delayHours * 3600000;
       if (dataAvailTime > now.getTime()) continue;
 
@@ -386,7 +381,6 @@ function findRunForTime(
     }
   }
 
-  // Fallback: use latest available run
   return latestRun;
 }
 
@@ -402,6 +396,398 @@ function findLatestAvailableRun(cycles: number[], delayHours: number): { runDate
   };
 }
 
+// ── AWS S3 GFS Data Access ──────────────────────────────────────────
+// AWS Open Data bucket noaa-gfs-bdp-pds has full GFS 0.25° data from 2021-01-01.
+// Uses GRIB2 .idx index files for efficient partial downloads via HTTP range requests,
+// fetching only the UGRD/VGRD messages at 10m (~2-4MB total vs ~500MB full file).
+
+const AWS_S3_BASE = 'https://noaa-gfs-bdp-pds.s3.amazonaws.com';
+const AWS_MIN_DATE = '20210101';
+// GFS v16.3.0 (2021-03-23) restructured paths to include /atmos/
+const AWS_PATH_CHANGE_DATE = '20210323';
+
+function buildAwsGfsBaseUrl(dateStr: string, cycle: string): string {
+  if (dateStr >= AWS_PATH_CHANGE_DATE) {
+    return `${AWS_S3_BASE}/gfs.${dateStr}/${cycle}/atmos/gfs.t${cycle}z.pgrb2.0p25.f000`;
+  }
+  return `${AWS_S3_BASE}/gfs.${dateStr}/${cycle}/gfs.t${cycle}z.pgrb2.0p25.f000`;
+}
+
+interface IdxEntry {
+  byteStart: number;
+  byteEnd: number;
+  variable: string;
+  level: string;
+}
+
+function parseGribIdx(text: string): IdxEntry[] {
+  const entries: IdxEntry[] = [];
+  const lines = text.split('\n').filter(l => l.trim());
+
+  // First pass: extract byte offsets and line content
+  const parsed: { byteStart: number; lineIdx: number }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const parts = lines[i].split(':');
+    if (parts.length < 4) continue;
+    const byteStart = parseInt(parts[1], 10);
+    if (isNaN(byteStart) || byteStart < 0) continue;
+    parsed.push({ byteStart, lineIdx: i });
+  }
+
+  // Build entries with byte ranges computed from consecutive offsets
+  for (let i = 0; i < parsed.length; i++) {
+    const { byteStart, lineIdx } = parsed[i];
+    const parts = lines[lineIdx].split(':');
+
+    let byteEnd: number;
+    if (i + 1 < parsed.length) {
+      byteEnd = parsed[i + 1].byteStart;
+    } else {
+      byteEnd = byteStart + 5_000_000; // 5MB upper bound for last message
+    }
+
+    let variable = '';
+    let level = '';
+    for (const part of parts) {
+      if (part === 'UGRD' || part === 'VGRD') variable = part;
+      if (part.includes('m above ground')) level = part;
+    }
+
+    entries.push({ byteStart, byteEnd, variable, level });
+  }
+
+  return entries;
+}
+
+async function fetchAwsWind(dateStr: string, utcHour: number): Promise<{
+  binary: Buffer;
+  source: string;
+} | null> {
+  if (dateStr < AWS_MIN_DATE) return null;
+
+  const cycle = String(Math.floor(utcHour / 6) * 6).padStart(2, '0');
+  const baseUrl = buildAwsGfsBaseUrl(dateStr, cycle);
+  const idxUrl = baseUrl + '.idx';
+
+  console.log(`[wind] Trying AWS S3: ${idxUrl.slice(0, 100)}...`);
+
+  // 1. Fetch the idx file
+  let idxText: string;
+  try {
+    const idxRes = await fetch(idxUrl, {
+      headers: { 'User-Agent': 'Hihan-WindFetcher/1.0' },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!idxRes.ok) {
+      console.log(`[wind] AWS S3 idx returned ${idxRes.status}`);
+      return null;
+    }
+    idxText = await idxRes.text();
+  } catch (err) {
+    console.log(`[wind] AWS S3 idx failed: ${(err as Error).message}`);
+    return null;
+  }
+
+  // 2. Parse idx to find UGRD/VGRD at 10m byte ranges
+  const entries = parseGribIdx(idxText);
+  const uEntry = entries.find(e => e.variable === 'UGRD' && e.level.includes('10 m above ground'));
+  const vEntry = entries.find(e => e.variable === 'VGRD' && e.level.includes('10 m above ground'));
+
+  if (!uEntry || !vEntry) {
+    console.log(`[wind] AWS S3: no 10m wind in idx (UGRD=${uEntry ? 'found' : 'missing'}, VGRD=${vEntry ? 'found' : 'missing'})`);
+    return null;
+  }
+
+  // 3. Merge overlapping/adjacent ranges for efficiency
+  const ranges = [
+    { start: uEntry.byteStart, end: uEntry.byteEnd - 1 },
+    { start: vEntry.byteStart, end: vEntry.byteEnd - 1 },
+  ].sort((a, b) => a.start - b.start);
+
+  const mergedRanges = [{ start: ranges[0].start, end: ranges[0].end }];
+  for (let i = 1; i < ranges.length; i++) {
+    const last = mergedRanges[mergedRanges.length - 1];
+    if (ranges[i].start <= last.end + 1) {
+      last.end = Math.max(last.end, ranges[i].end);
+    } else {
+      mergedRanges.push({ start: ranges[i].start, end: ranges[i].end });
+    }
+  }
+
+  // 4. Download via HTTP Range requests
+  const chunks: Uint8Array[] = [];
+  for (const range of mergedRanges) {
+    const rangeHeader = `bytes=${range.start}-${range.end}`;
+    console.log(`[wind] AWS S3 range: ${rangeHeader}`);
+
+    try {
+      const res = await fetch(baseUrl, {
+        headers: {
+          'User-Agent': 'Hihan-WindFetcher/1.0',
+          'Range': rangeHeader,
+        },
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (res.status !== 206 && res.status !== 200) {
+        console.log(`[wind] AWS S3 range returned ${res.status}`);
+        return null;
+      }
+
+      const buf = await res.arrayBuffer();
+      chunks.push(new Uint8Array(buf));
+    } catch (err) {
+      console.log(`[wind] AWS S3 range failed: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  // Concatenate chunks
+  const totalLen = chunks.reduce((s, c) => s + c.length, 0);
+  const gribBuf = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const chunk of chunks) {
+    gribBuf.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  // 5. Decode GRIB2
+  const messages = decodeGrib2(gribBuf.buffer);
+  const wind = findWindMessages(messages);
+
+  if (!wind) {
+    console.log(`[wind] AWS S3: no UGRD/VGRD at 10m (${messages.length} messages decoded)`);
+    return null;
+  }
+
+  const u = resampleTo1Deg(wind.u);
+  const v = resampleTo1Deg(wind.v);
+
+  const timestamp = Date.now() / 1000;
+  const source = `aws-gfs0p25-${dateStr}-${cycle}z-f000`;
+  const binary = encodeBinary(u, v, timestamp, source);
+
+  return { binary, source };
+}
+
+// ── NCEI Direct HTTPS Access ────────────────────────────────────────
+// For pre-2021 dates, try NCEI's direct HTTPS download of Grid 4 (0.5°)
+// analysis GRIB2 files. Larger than OPeNDAP subsets but the only remaining
+// path for 2004-2020 data without authentication.
+
+const NCEI_HTTPS_BASE = 'https://www.ncei.noaa.gov/data/global-forecast-system/access/grid-004-0.5-degree/analysis';
+const NCEI_DIRECT_MAX_SIZE = 50_000_000; // 50MB max
+
+async function fetchNceiDirectWind(dateStr: string, utcHour: number): Promise<{
+  binary: Buffer;
+  source: string;
+} | null> {
+  const year = dateStr.slice(0, 4);
+  const cycleHHMM = String(Math.floor(utcHour / 6) * 6 * 100).padStart(4, '0');
+  const url = `${NCEI_HTTPS_BASE}/${year}/${dateStr}/gfsanl_4_${dateStr}_${cycleHHMM}_000.grb2`;
+
+  console.log(`[wind] Trying NCEI direct: ${url.slice(0, 100)}...`);
+
+  try {
+    // HEAD request to check availability and size
+    const headRes = await fetch(url, {
+      method: 'HEAD',
+      headers: { 'User-Agent': 'Hihan-WindFetcher/1.0' },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!headRes.ok) {
+      console.log(`[wind] NCEI direct returned ${headRes.status}`);
+      return null;
+    }
+
+    const contentLength = parseInt(headRes.headers.get('Content-Length') || '0', 10);
+    if (contentLength > NCEI_DIRECT_MAX_SIZE) {
+      console.log(`[wind] NCEI direct file too large: ${contentLength} bytes`);
+      return null;
+    }
+
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Hihan-WindFetcher/1.0' },
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!res.ok) return null;
+
+    const buf = await res.arrayBuffer();
+    const messages = decodeGrib2(buf);
+    const wind = findWindMessages(messages);
+
+    if (!wind) {
+      console.log(`[wind] NCEI direct: no UGRD/VGRD at 10m (${messages.length} messages)`);
+      return null;
+    }
+
+    const u = resampleTo1Deg(wind.u);
+    const v = resampleTo1Deg(wind.v);
+
+    const cycle = String(Math.floor(utcHour / 6) * 6).padStart(2, '0');
+    const source = `ncei-gfs4-${dateStr}-${cycle}z`;
+    const timestamp = Date.now() / 1000;
+    const binary = encodeBinary(u, v, timestamp, source);
+
+    return { binary, source };
+  } catch (err) {
+    console.log(`[wind] NCEI direct failed: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+// ── NCEI THREDDS OPeNDAP (last resort, currently broken) ───────────
+// NCEI's backend migrated to S3; THREDDS proxy returns 403/500.
+// Kept as fallback in case service is restored.
+
+const NCEI_BASE = 'https://www.ncei.noaa.gov/thredds/dodsC';
+const NCEI_MAX_DATE = '20231130';
+
+const NCEI_CATALOGS = [
+  { suffix: '', minDate: '20200501' },
+  { suffix: '-old', minDate: '20040301' },
+];
+
+function buildNceiOpendapUrl(dateStr: string, hour: number, catalogSuffix: string): string {
+  const cycleHHMM = String(Math.floor(hour / 6) * 6 * 100).padStart(4, '0');
+  const catalogPath = `model-gfs-g4-anl-files${catalogSuffix}`;
+  return (
+    `${NCEI_BASE}/${catalogPath}/${dateStr.slice(0, 6)}/${dateStr}` +
+    `/gfsanl_4_${dateStr}_${cycleHHMM}_000.grb2.ascii` +
+    `?u-component_of_wind_height_above_ground[0][0][0:2:360][0:2:719]` +
+    `&v-component_of_wind_height_above_ground[0][0][0:2:360][0:2:719]`
+  );
+}
+
+interface ParsedOpendapWind {
+  u: Float32Array;
+  v: Float32Array;
+}
+
+function parseOpendapAscii(text: string): ParsedOpendapWind | null {
+  const uArr = new Float32Array(GRID_WIDTH * GRID_HEIGHT);
+  const vArr = new Float32Array(GRID_WIDTH * GRID_HEIGHT);
+
+  const uMarker = 'u-component_of_wind_height_above_ground.u-component_of_wind_height_above_ground';
+  const vMarker = 'v-component_of_wind_height_above_ground.v-component_of_wind_height_above_ground';
+
+  const uStart = text.indexOf(uMarker);
+  const vStart = text.indexOf(vMarker);
+  if (uStart < 0 || vStart < 0) return null;
+
+  const uSection = text.slice(uStart, vStart);
+  const vSection = text.slice(vStart);
+
+  parseVariableSection(uSection, uArr);
+  parseVariableSection(vSection, vArr);
+
+  return { u: uArr, v: vArr };
+}
+
+function parseVariableSection(section: string, out: Float32Array): void {
+  const lines = section.split('\n');
+  for (const line of lines) {
+    const match = line.match(/^\[0\]\[0\]\[(\d+)\],\s*(.*)/);
+    if (!match) continue;
+    const latIdx = parseInt(match[1], 10);
+    if (latIdx < 0 || latIdx >= GRID_HEIGHT) continue;
+    const values = match[2].split(',').map(s => parseFloat(s.trim()));
+    for (let i = 0; i < values.length && i < GRID_WIDTH; i++) {
+      if (isFinite(values[i])) {
+        out[latIdx * GRID_WIDTH + i] = values[i];
+      }
+    }
+  }
+}
+
+async function fetchNceiWind(dateStr: string, utcHour: number): Promise<{
+  binary: Buffer;
+  source: string;
+} | null> {
+  if (dateStr > NCEI_MAX_DATE) return null;
+
+  const snappedHour = Math.floor(utcHour / 6) * 6;
+
+  for (const catalog of NCEI_CATALOGS) {
+    if (dateStr < catalog.minDate) continue;
+
+    const url = buildNceiOpendapUrl(dateStr, snappedHour, catalog.suffix);
+    console.log(`[wind] Trying NCEI OPeNDAP: ${url.slice(0, 100)}...`);
+
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Hihan-WindFetcher/1.0' },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!res.ok) {
+        console.log(`[wind] NCEI OPeNDAP ${catalog.suffix || 'current'} returned ${res.status}`);
+        continue;
+      }
+
+      const text = await res.text();
+      const parsed = parseOpendapAscii(text);
+      if (!parsed) {
+        console.log(`[wind] NCEI OPeNDAP parse failed for ${catalog.suffix || 'current'}`);
+        continue;
+      }
+
+      const timestamp = Date.now() / 1000;
+      const cycle = String(snappedHour).padStart(2, '0');
+      const source = `ncei-gfs4-${dateStr}-${cycle}z`;
+      const binary = encodeBinary(parsed.u, parsed.v, timestamp, source);
+
+      return { binary, source };
+    } catch (err) {
+      console.log(`[wind] NCEI OPeNDAP ${catalog.suffix || 'current'} failed: ${(err as Error).message}`);
+      continue;
+    }
+  }
+
+  return null;
+}
+
+// ── Historical wind data dispatcher ─────────────────────────────────
+// Tries sources in priority order based on date range.
+
+function isHistoricalDate(dateStr: string, hourStr?: string): boolean {
+  if (dateStr === 'latest') return false;
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - 15 * 86400000);
+  const h = hourStr ? parseInt(hourStr, 10) : 0;
+  const target = new Date(
+    `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}T${String(h).padStart(2, '0')}:00:00Z`
+  );
+  return !isNaN(target.getTime()) && target.getTime() < cutoff.getTime();
+}
+
+async function fetchHistoricalWind(dateStr: string, utcHour: number): Promise<{
+  binary: Buffer;
+  source: string;
+} | null> {
+  // 2021+ dates: AWS S3 is most reliable
+  if (dateStr >= AWS_MIN_DATE) {
+    const result = await fetchAwsWind(dateStr, utcHour);
+    if (result) return result;
+  }
+
+  // Pre-2021: try NCEI direct HTTPS (Grid 4, 0.5°)
+  if (dateStr < AWS_MIN_DATE) {
+    const result = await fetchNceiDirectWind(dateStr, utcHour);
+    if (result) return result;
+  }
+
+  // Last resort: NCEI THREDDS OPeNDAP (currently broken, 403 errors)
+  if (dateStr <= NCEI_MAX_DATE) {
+    const result = await fetchNceiWind(dateStr, utcHour);
+    if (result) return result;
+  }
+
+  return null;
+}
+
 // ── Handler ──────────────────────────────────────────────────────────
 const handler: Handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
@@ -410,7 +796,38 @@ const handler: Handler = async (event) => {
 
   const params = event.queryStringParameters || {};
   const targetDate = params.date || 'latest';
-  const targetHour = params.hour; // UTC hour (0-23)
+  const targetHour = params.hour;
+  const hour = targetHour ? parseInt(targetHour, 10) : 0;
+  const safeHour = isNaN(hour) ? 0 : hour;
+
+  // Historical date: try AWS S3 (2021+), NCEI direct (pre-2021), NCEI OPeNDAP (last resort)
+  if (isHistoricalDate(targetDate, targetHour)) {
+    const result = await fetchHistoricalWind(targetDate, safeHour);
+    if (result) {
+      return {
+        statusCode: 200,
+        headers: {
+          ...CORS_HEADERS,
+          'Content-Type': 'application/octet-stream',
+          'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
+          'X-Wind-Source': result.source,
+        },
+        body: result.binary.toString('base64'),
+        isBase64Encoded: true,
+      };
+    }
+
+    const msg = targetDate >= AWS_MIN_DATE
+      ? 'GFS data temporarily unavailable for this date'
+      : 'Historical wind data before 2021 requires NCEI archive access (currently unavailable)';
+    return {
+      statusCode: 404,
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: msg }),
+    };
+  }
+
+  // Recent/future date: use NOMADS GRIB2 filter
   const runInfo = findBestRun(targetDate, targetHour);
   if (!runInfo) {
     return {
@@ -467,7 +884,26 @@ const handler: Handler = async (event) => {
       isBase64Encoded: true,
     };
   } catch (err) {
-    console.error(`[wind] GRIB2 fetch/decode failed: ${(err as Error).message}`);
+    // NOMADS failed — try historical sources as fallback
+    const result = await fetchHistoricalWind(
+      targetDate === 'latest' ? new Date().toISOString().slice(0, 10).replace(/-/g, '') : targetDate,
+      safeHour,
+    );
+    if (result) {
+      return {
+        statusCode: 200,
+        headers: {
+          ...CORS_HEADERS,
+          'Content-Type': 'application/octet-stream',
+          'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
+          'X-Wind-Source': result.source,
+        },
+        body: result.binary.toString('base64'),
+        isBase64Encoded: true,
+      };
+    }
+
+    console.error(`[wind] All sources failed: ${(err as Error).message}`);
     return {
       statusCode: 502,
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
